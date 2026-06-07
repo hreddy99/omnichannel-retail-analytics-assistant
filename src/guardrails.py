@@ -1,11 +1,12 @@
 """
-Guardrail functions (Plan sections 4, 9, 10, 13 / FR-05, FR-09).
+Guardrail functions (Plan sections 12, 13, 18 / FR-05, FR-08, FR-10, FR-12).
 
-Custom Python checks - no external dependency. They enforce:
-  * SQL safety        : only read-only SELECT over approved tables
-  * Freshness         : catalog/graph version alignment
-  * Evidence gate     : a branch must clear a score threshold to be a contributor
-  * Write protection  : write requests are refused, never executed
+Deterministic Python checks driven by guardrails.yaml:
+  * SQL safety        : read-only SELECT over catalog-approved tables
+  * Freshness/sync    : catalog/graph version + content_hash alignment
+  * Source priority   : YAML > DuckDB > ChromaDB > NetworkX (LLM never decides)
+  * Evidence gate     : score -> confidence label
+  * Write protection  : refuse writes; convert to recommendation
 """
 from __future__ import annotations
 
@@ -13,49 +14,63 @@ import re
 
 from . import catalog
 
-WRITE_KEYWORDS = re.compile(
-    r"\b(insert|update|delete|drop|alter|create|truncate|replace|merge|grant|attach|copy|pragma)\b",
-    re.IGNORECASE,
-)
 
-# Scoring thresholds from Plan section 8.
-PRUNE_BELOW = 7        # branches scoring < 7 are pruned
-LIKELY_AT = 10         # >= 10 may be ranked a likely driver
-MAX_SCORE = 14         # sum of rubric maxima (2+2+2+3+2+2+1)
+def _gr() -> dict:
+    return catalog.load_catalog().get("sql_safety", {}) or {}
+
+
+def _forbidden_pattern() -> re.Pattern:
+    kws = catalog.load_catalog().get("sql_safety", {}).get(
+        "forbidden_keywords",
+        ["insert", "update", "delete", "drop", "alter", "create", "truncate",
+         "replace", "merge", "grant", "attach", "copy", "pragma"])
+    return re.compile(r"\b(" + "|".join(kws) + r")\b", re.IGNORECASE)
+
+
+# scoring thresholds from guardrails.yaml (Plan section 11.1)
+def _thresholds() -> dict:
+    return catalog.load_catalog().get("confidence_thresholds", {
+        "prune_below": 7, "likely_driver_at": 10, "max_score": 14})
+
+
+PRUNE_BELOW = 7
+LIKELY_AT = 10
+MAX_SCORE = 14
 
 
 def check_sql(sql: str) -> tuple[bool, str]:
-    """Return (ok, reason). Blocks anything that is not a read-only SELECT
-    over catalog-approved tables (FR-05)."""
+    """(ok, reason). Read-only SELECT over approved tables only (FR-05)."""
     s = sql.strip().rstrip(";")
-    if WRITE_KEYWORDS.search(s):
+    if _forbidden_pattern().search(s):
         return False, "Blocked: write/DDL keyword detected. Prototype is read-only."
     if not re.match(r"^\s*(with|select)\b", s, re.IGNORECASE):
         return False, "Blocked: only SELECT/WITH statements are permitted."
     if ";" in s:
         return False, "Blocked: multiple statements are not allowed."
     referenced = set(re.findall(r"\b(?:from|join)\s+([a-zA-Z_][\w]*)", s, re.IGNORECASE))
-    approved = catalog.approved_tables()
-    unknown = {t for t in referenced if t.lower() not in {a.lower() for a in approved}}
-    # allow CTE aliases (single letters / names defined via WITH)
-    cte_names = set(re.findall(r"\b([a-zA-Z_]\w*)\s+AS\s*\(", s, re.IGNORECASE))
-    unknown -= {c.lower() for c in cte_names}
-    unknown -= {u for u in unknown if len(u) <= 2}
+    approved = {a.lower() for a in catalog.approved_tables()}
+    cte_names = {c.lower() for c in re.findall(r"\b([a-zA-Z_]\w*)\s+AS\s*\(", s, re.IGNORECASE)}
+    unknown = {t for t in referenced if t.lower() not in approved
+               and t.lower() not in cte_names and len(t) > 2}
     if unknown:
         return False, f"Blocked: table(s) not approved in YAML catalog: {sorted(unknown)}"
     return True, "SELECT validated against approved tables."
 
 
-def check_freshness(catalog_version: str, graph_version: str) -> tuple[bool, str]:
+def check_freshness(catalog_version: str, graph_version: str,
+                    graph_hash: str | None = None) -> tuple[bool, str]:
+    """Catalog sync/version gate (Plan section 7.2)."""
     if catalog_version != catalog.version():
         return False, "Stale: catalog version drift detected."
     if graph_version != catalog.version():
-        return False, "Stale: graph version does not match catalog; rebuild required."
-    return True, "Catalog and graph versions aligned."
+        return False, "Stale: graph version != catalog; rebuild required."
+    if graph_hash is not None and graph_hash != catalog.content_hash():
+        return False, "Stale: graph source hash != catalog content hash; rebuild required."
+    return True, "Catalog, graph, and content hashes aligned."
 
 
 def evidence_gate(score: int) -> str:
-    """Map a branch score to a confidence label (Plan section 8)."""
+    """Map a branch score to a confidence label (Plan section 11.1)."""
     if score < PRUNE_BELOW:
         return "pruned"
     if score < LIKELY_AT:
@@ -63,11 +78,16 @@ def evidence_gate(score: int) -> str:
     return "likely driver"
 
 
+def overall_confidence(n_likely: int) -> str:
+    return "high" if n_likely >= 1 else "inconclusive"
+
+
 def refuse_write(user_text: str) -> str | None:
-    """FR-09: never write to operational systems; convert to a recommendation."""
-    if re.search(r"\b(update|set|change|push|write|delete|reorder|launch|send)\b",
+    """FR-12: never write to operational systems; convert to a recommendation."""
+    if re.search(r"\b(update|set|change|push|write|delete|reorder|launch|send|increase|cut|adjust)\b",
                  user_text, re.IGNORECASE):
-        return ("This prototype is read-only and cannot modify operational systems. "
-                "I can turn this into a human-reviewed recommendation routed to the "
-                "responsible owner instead.")
+        return ("This prototype is read-only and cannot modify operational systems "
+                "(ERP, OMS, CRM, pricing, campaign, inventory, fulfillment, service, "
+                "finance). I can convert this into a human-reviewed recommendation "
+                "routed to the responsible owner instead.")
     return None

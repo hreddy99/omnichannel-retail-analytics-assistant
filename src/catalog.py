@@ -1,9 +1,10 @@
 """
-Governed catalog loader (Plan section 6).
+Governed catalog loader (Plan sections 7.1, 7.2).
 
-Loads the YAML semantic catalog - the authoritative source of truth - and
-exposes a content_hash + version so downstream layers (ChromaDB chunks,
-NetworkX graph) can detect drift and refuse stale context.
+Loads the split YAML catalog (metrics / tables / drivers / business_rules /
+guardrails / examples + a versions manifest), computes a per-file content_hash,
+and exposes the sync metadata used by the retrieval and graph layers to detect
+drift and reject stale context. YAML is the authoritative source of truth.
 """
 from __future__ import annotations
 
@@ -13,23 +14,48 @@ import pathlib
 
 import yaml
 
-CATALOG_PATH = pathlib.Path(__file__).resolve().parent.parent / "catalog" / "catalog.yaml"
+CATALOG_DIR = pathlib.Path(__file__).resolve().parent.parent / "catalog"
+SECTION_FILES = ["metrics", "tables", "drivers", "business_rules", "guardrails", "examples"]
+
+
+def _hash(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
 
 
 @functools.lru_cache(maxsize=1)
 def load_catalog() -> dict:
-    text = CATALOG_PATH.read_text(encoding="utf-8")
-    data = yaml.safe_load(text)
-    data["_content_hash"] = hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
-    return data
+    """Merge all section files into one dict with per-file content hashes."""
+    manifest = yaml.safe_load((CATALOG_DIR / "versions.yaml").read_text("utf-8"))
+    cat: dict = {
+        "catalog_version": manifest["catalog_version"],
+        "last_updated": manifest["last_updated"],
+        "approved_for_mvp": manifest["approved_for_mvp"],
+        "_hashes": {},
+    }
+    for sec in SECTION_FILES:
+        text = (CATALOG_DIR / f"{sec}.yaml").read_text("utf-8")
+        data = yaml.safe_load(text)
+        cat["_hashes"][f"{sec}.yaml"] = _hash(text)
+        # lift the section payload keys to the top level (metrics, tables, ...)
+        for k, v in data.items():
+            if k == "section_id":
+                continue
+            cat[k] = v
+    return cat
 
 
 def version() -> str:
-    return load_catalog().get("catalog_version", "unknown")
+    return load_catalog()["catalog_version"]
 
 
 def content_hash() -> str:
-    return load_catalog()["_content_hash"]
+    """A single combined hash across all section files."""
+    hashes = load_catalog()["_hashes"]
+    return _hash("|".join(f"{k}:{v}" for k, v in sorted(hashes.items())))
+
+
+def file_hashes() -> dict:
+    return dict(load_catalog()["_hashes"])
 
 
 def get_metric(name: str) -> dict | None:
@@ -44,25 +70,51 @@ def approved_tables() -> set[str]:
     return set(load_catalog().get("tables", {}).keys())
 
 
+def sql_template(name: str) -> str | None:
+    tmpl = load_catalog().get("sql_templates", {}).get(name)
+    return tmpl.get("sql") if tmpl else None
+
+
+def _hash_for_section(section: str) -> str:
+    return load_catalog()["_hashes"].get(f"{section}.yaml", "")
+
+
 def chunks() -> list[dict]:
     """
-    Simulate the ChromaDB chunking step (Plan section 7): one semantic chunk
-    per metric / table / driver, each tagged with governance metadata so the
-    retrieval layer can validate version + content_hash before use.
+    Semantic chunks for ChromaDB (Plan section 8): one chunk per metric / table /
+    driver / business rule / SQL template / example question, each tagged with the
+    governance metadata used by the sync/version gate (Plan section 7.2).
     """
     cat = load_catalog()
+    v = version()
     out: list[dict] = []
-    v, h = version(), content_hash()
+
+    def add(source_type, section, name, content, domain=None, owner=None, table=None,
+            metric=None, freshness=None):
+        out.append({
+            "id": f"{source_type}:{name}",
+            "source_type": source_type, "source_file": f"{section}.yaml",
+            "section_id": section, "name": name, "metric_name": metric or (name if source_type == "metric" else None),
+            "domain": domain, "table_name": table, "owner": owner,
+            "freshness_level": freshness, "version": v,
+            "last_updated": cat["last_updated"], "content_hash": _hash_for_section(section),
+            "approved_for_mvp": True, "content": content,
+        })
+
     for name, m in cat.get("metrics", {}).items():
-        out.append({"source_type": "metric", "name": name, "domain": m.get("domain"),
-                    "owner": m.get("owner"), "content": m.get("definition", "").strip(),
-                    "version": v, "content_hash": h, "approved_for_mvp": True})
+        add("metric", "metrics", name, f"{m.get('label')}: {m.get('definition','').strip()}",
+            domain=m.get("domain"), owner=m.get("owner"), metric=name,
+            freshness=m.get("freshness_level"))
     for name, t in cat.get("tables", {}).items():
-        out.append({"source_type": "table", "name": name, "domain": None,
-                    "owner": t.get("owner"), "content": f"{name} ({t.get('grain')})",
-                    "version": v, "content_hash": h, "approved_for_mvp": True})
+        add("table", "tables", name, f"{name} ({t.get('grain')}): {t.get('approved_use','')}",
+            owner=t.get("owner"), table=name, freshness=t.get("freshness"))
     for name, d in cat.get("drivers", {}).items():
-        out.append({"source_type": "driver", "name": name, "domain": d.get("domain"),
-                    "owner": d.get("owner"), "content": d.get("hypothesis", ""),
-                    "version": v, "content_hash": h, "approved_for_mvp": True})
+        add("driver", "drivers", name, f"{d.get('label')}: {d.get('hypothesis','')}",
+            domain=d.get("domain"), owner=d.get("owner"))
+    for name, r in cat.get("rules", {}).items():
+        add("business_rule", "business_rules", name, r.get("description", ""))
+    for name, tm in cat.get("sql_templates", {}).items():
+        add("sql_template", "examples", name, tm.get("purpose", ""))
+    for i, ex in enumerate(cat.get("example_questions", [])):
+        add("example", "examples", f"example_{i}", ex.get("question", ""))
     return out

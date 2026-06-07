@@ -1,10 +1,10 @@
 """
 Omnichannel Retail Analytics Assistant - Streamlit app.
 
-An interactive companion to the project plan AND a runnable prototype of the
-governed investigation workflow described in Checkpoint 4.1. Six pages:
-Overview, Feasibility Review, Architecture, Step-by-Step Plan, Live Demo, and
-an Interactive Plan with a downloadable standalone HTML.
+Interactive companion to the detailed project plan AND a runnable prototype of
+the governed investigation workflow (ReAct + RAG + Knowledge Graph + conditional
+ToT beam search). The Live Demo runs the real LangGraph pipeline and exposes the
+four trace levels from Plan section 17.3.
 
 Run:  streamlit run app.py
 """
@@ -14,30 +14,25 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from src import catalog, graph, guardrails
+from src import catalog, graph, guardrails, llm
 from src import plan_content as P
+from src import retrieval
 from src.investigation import BEAM_WIDTH, QUERY_BUDGET, run_investigation
 
 st.set_page_config(page_title="Omnichannel Retail Analytics Assistant",
                    page_icon="🛍️", layout="wide")
 
-# --------------------------------------------------------------------------
-# Small helpers
-# --------------------------------------------------------------------------
-def _df(rows, cols):
-    return pd.DataFrame(rows, columns=cols)
+CONF_COLOR = {"likely driver": "#16a34a", "possible contributor": "#d97706",
+              "possible contributor (outside beam)": "#d97706", "pruned": "#dc2626"}
 
 
 def _table(rows, cols):
-    st.dataframe(_df(rows, cols), width="stretch", hide_index=True)
+    st.dataframe(pd.DataFrame(rows, columns=cols), width="stretch", hide_index=True)
 
 
-CONF_COLOR = {
-    "likely driver": "#16a34a",
-    "possible contributor": "#d97706",
-    "possible contributor (outside beam)": "#d97706",
-    "pruned": "#dc2626",
-}
+@st.cache_resource(show_spinner="Building local vector index (ChromaDB)…")
+def _index():
+    return retrieval.get_index()
 
 
 # ==========================================================================
@@ -45,73 +40,54 @@ CONF_COLOR = {
 # ==========================================================================
 def page_overview():
     st.title("🛍️ Omnichannel Retail Analytics Assistant")
-    st.caption(P.SUBTITLE)
+    st.caption(f"{P.SUBTITLE}  ·  {P.TAGLINE}")
     st.success("**Feasibility decision:** " + P.FEASIBILITY)
-
     st.subheader("Executive summary")
     st.write(P.EXECUTIVE_SUMMARY)
-
     st.subheader("Business problem & intended users")
     st.write(P.BUSINESS_PROBLEM)
-
+    _table(P.BUSINESS_ROLES, ["Business role", "Typical question", "Assistant value"])
     st.subheader("Capstone fit & course alignment")
     _table(P.CAPSTONE_FIT, ["Capstone concept", "How the project demonstrates it", "Success measure"])
-
     st.subheader("Prototype status (this repository)")
-    st.caption("How this runnable prototype maps to the plan. Green = built and exercised in the Live Demo.")
-    status_df = _df(P.PROTOTYPE_STATUS, ["Component", "Status", "Notes"])
-
-    def _badge(s):
-        c = {"Built": "background-color:#dcfce7", "Stubbed": "background-color:#fef9c3",
-             "Optional": "background-color:#e0e7ff", "Modeled": "background-color:#f1f5f9"}.get(s, "")
-        return c
-    st.dataframe(status_df.style.map(_badge, subset=["Status"]),
+    status = pd.DataFrame(P.PROTOTYPE_STATUS, columns=["Component", "Status", "Notes"])
+    color = {"Built": "background-color:#dcfce7", "Optional": "background-color:#e0e7ff"}
+    st.dataframe(status.style.map(lambda s: color.get(s, ""), subset=["Status"]),
                  width="stretch", hide_index=True)
 
 
 # ==========================================================================
-# PAGE: Feasibility Review
+# PAGE: Feasibility
 # ==========================================================================
 def page_feasibility():
     st.title("✅ Feasibility Review")
-    st.write(
-        "The plan's central feasibility claim is that the entire MVP is **free and "
-        "runnable on a personal PC**. The review below assesses that claim against "
-        "the proposed stack, then summarizes the project risks and their mitigations."
-    )
-
+    st.write("The plan's core claim is a **free, local, read-only** MVP runnable on a "
+             "personal PC. This prototype confirms it end-to-end.")
     c1, c2, c3 = st.columns(3)
     c1.metric("Required paid services", "0")
     c2.metric("External APIs to run demo", "0")
-    c3.metric("Runs offline", "Yes")
-
-    st.info(
-        "**Verdict: Feasible.** Every component required to run the demo is a free, "
-        "local, open-source library. This prototype confirms it: the Live Demo runs "
-        "the full governed workflow (synthetic data → DuckDB evidence → conditional "
-        "ToT beam search → guardrails → grounded answer) with **no external services**. "
-        "The LLM (Ollama) and vector embeddings (ChromaDB) are *optional enhancements* — "
-        "a deterministic stand-in is shipped so the architecture is demonstrable on any laptop."
-    )
-
+    c3.metric("Runs locally", "Yes")
+    st.info("**Verdict: Feasible.** The Live Demo runs the full governed workflow "
+            "(Faker synthetic data → ChromaDB retrieval → NetworkX graph → DuckDB evidence "
+            "→ conditional ToT beam search → guardrails → grounded answer) with free, local "
+            "tools. Ollama (LLM) and sentence-transformers downloads are optional enhancements "
+            "with graceful fallbacks, so the architecture is demonstrable on any laptop.")
     st.subheader("Free / local tool stack")
-    free_rows = [(t, r, "✅ " + f if f == "Yes" else ("🔵 " + f if f == "Optional" else f), n)
-                 for (t, r, f, n) in P.TOOL_STACK]
-    _table(free_rows, ["Tool", "Role", "Free / doable on PC?", "MVP notes"])
+    rows = [(t, r, ("✅ " + f if f == "Yes" else "🔵 " + f), n) for (t, r, f, n) in P.TOOL_STACK]
+    _table(rows, ["Tool", "Role", "Free / on PC?", "MVP notes"])
 
-    st.subheader("What's required vs optional to run this prototype")
-    a, b = st.columns(2)
-    with a:
-        st.markdown("**Required (all free, installed via `requirements.txt`)**")
-        st.markdown("- Python, Streamlit\n- DuckDB (read-only analytics)\n- "
-                    "NetworkX (knowledge graph)\n- PyYAML (governed catalog)\n- "
-                    "pandas / numpy / plotly")
-    with b:
-        st.markdown("**Optional (documented, not needed for the demo)**")
-        st.markdown("- Ollama — local LLM for planning/drafting\n- ChromaDB + "
-                    "sentence-transformers — vector retrieval\n- LangGraph — "
-                    "orchestration (deterministic stand-in used here)\n- CrewAI / MCP — future role separation")
+    st.subheader("Implementation issues found in this hosted sandbox (and how they're handled)")
+    st.markdown(
+        "- **Ollama** needs a separate daemon + multi-GB model — not present in a cloud "
+        "sandbox. Handled: optional client with a deterministic template fallback (works on your PC).\n"
+        "- **sentence-transformers** downloads its model from huggingface.co, which is blocked "
+        "here. Handled: falls back to ChromaDB's bundled ONNX build of the **same all-MiniLM-L6-v2** "
+        "model, then to a deterministic hashing embedder.\n"
+        "- **ChromaDB** install collided with the system PyYAML. Handled: documented install flag.\n"
+        "- The **active embedder and LLM mode are shown in Trust details** so degradation is visible.")
 
+    st.subheader("Implementation-readiness checklist")
+    _table(P.READINESS, ["Question", "Answer"])
     st.subheader("Risks & mitigations")
     _table(P.RISKS, ["Risk", "Mitigation"])
 
@@ -120,91 +96,76 @@ def page_feasibility():
 # PAGE: Architecture
 # ==========================================================================
 def _flow_figure():
-    """LangGraph-style controller flow as a left-to-right node diagram."""
-    nodes = ["Question", "Classify /\nRetrieve", "Validate\nvs YAML", "Graph\nselect",
-             "Conditional\nToT beam", "SQL\nvalidate", "DuckDB\nevidence",
-             "Evidence\ngate / stop", "Grounded\nanswer"]
+    nodes = ["Question", "Classify", "Sync\ngate", "Retrieve\n(Chroma)", "Validate\n(YAML)",
+             "Relate\n(graph)", "Baseline\n(DuckDB)", "ToT\ngate", "Beam\nsearch",
+             "Evidence\ngate", "Answer"]
     xs = list(range(len(nodes)))
     fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=xs, y=[0] * len(nodes), mode="markers+text",
-        marker=dict(size=46, color="#2563eb", line=dict(width=2, color="#1e40af")),
-        text=nodes, textposition="middle center",
-        textfont=dict(color="white", size=10), hoverinfo="text"))
+    fig.add_trace(go.Scatter(x=xs, y=[0] * len(nodes), mode="markers+text",
+                             marker=dict(size=42, color="#2563eb", line=dict(width=2, color="#1e40af")),
+                             text=nodes, textposition="middle center",
+                             textfont=dict(color="white", size=9), hoverinfo="text"))
     for i in range(len(nodes) - 1):
-        fig.add_annotation(x=xs[i + 1], y=0, ax=xs[i], ay=0, xref="x", yref="y",
-                           axref="x", ayref="y", showarrow=True, arrowhead=3,
-                           arrowwidth=1.6, arrowcolor="#94a3b8")
-    # feedback loop (revise)
-    fig.add_annotation(x=2, y=0.0, ax=7, ay=0.45, xref="x", yref="y", axref="x",
-                       ayref="y", showarrow=True, arrowhead=3, arrowwidth=1.3,
-                       arrowcolor="#f59e0b", text="revise / retry", font=dict(size=9, color="#b45309"))
-    fig.update_layout(height=230, showlegend=False, margin=dict(l=10, r=10, t=10, b=10),
+        fig.add_annotation(x=xs[i + 1], y=0, ax=xs[i], ay=0, xref="x", yref="y", axref="x",
+                           ayref="y", showarrow=True, arrowhead=3, arrowwidth=1.5, arrowcolor="#94a3b8")
+    fig.add_annotation(x=4, y=0, ax=9, ay=0.5, xref="x", yref="y", axref="x", ayref="y",
+                       showarrow=True, arrowhead=3, arrowwidth=1.2, arrowcolor="#f59e0b",
+                       text="revise / retry", font=dict(size=9, color="#b45309"))
+    fig.update_layout(height=210, showlegend=False, margin=dict(l=10, r=10, t=10, b=10),
                       xaxis=dict(visible=False, range=[-0.6, len(nodes) - 0.4]),
-                      yaxis=dict(visible=False, range=[-0.6, 0.7]),
-                      plot_bgcolor="white")
+                      yaxis=dict(visible=False, range=[-0.7, 0.8]), plot_bgcolor="white")
     return fig
 
 
 def _graph_figure():
-    """Render the catalog-derived NetworkX graph (metric → driver → table/owner)."""
     import networkx as nx
     g = graph.build_graph()
-    pos = nx.spring_layout(g, seed=7, k=0.9)
-    kind_color = {"metric": "#2563eb", "driver": "#16a34a",
-                  "table": "#64748b", "owner": "#d97706"}
+    pos = nx.spring_layout(g, seed=11, k=1.1)
+    kind_color = {"metric": "#2563eb", "driver": "#16a34a", "table": "#64748b",
+                  "owner": "#d97706", "system": "#9333ea"}
     ex, ey = [], []
     for u, v in g.edges():
-        ex += [pos[u][0], pos[v][0], None]
-        ey += [pos[u][1], pos[v][1], None]
+        ex += [pos[u][0], pos[v][0], None]; ey += [pos[u][1], pos[v][1], None]
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=ex, y=ey, mode="lines",
-                             line=dict(width=1, color="#cbd5e1"), hoverinfo="none"))
+    fig.add_trace(go.Scatter(x=ex, y=ey, mode="lines", line=dict(width=0.8, color="#cbd5e1"),
+                             hoverinfo="none", showlegend=False))
     for kind, color in kind_color.items():
         ns = [n for n in g.nodes if g.nodes[n].get("kind") == kind]
-        fig.add_trace(go.Scatter(
-            x=[pos[n][0] for n in ns], y=[pos[n][1] for n in ns],
-            mode="markers+text", name=kind,
-            marker=dict(size=18, color=color),
-            text=[g.nodes[n].get("label", n) for n in ns],
-            textposition="top center", textfont=dict(size=9), hoverinfo="text"))
-    fig.update_layout(height=460, margin=dict(l=10, r=10, t=10, b=10),
-                      xaxis=dict(visible=False), yaxis=dict(visible=False),
-                      legend=dict(orientation="h", y=1.05), plot_bgcolor="white")
+        if not ns:
+            continue
+        fig.add_trace(go.Scatter(x=[pos[n][0] for n in ns], y=[pos[n][1] for n in ns],
+                                 mode="markers+text", name=kind, marker=dict(size=14, color=color),
+                                 text=[g.nodes[n].get("label", n) for n in ns],
+                                 textposition="top center", textfont=dict(size=8), hoverinfo="text"))
+    fig.update_layout(height=520, margin=dict(l=10, r=10, t=10, b=10), xaxis=dict(visible=False),
+                      yaxis=dict(visible=False), legend=dict(orientation="h", y=1.04), plot_bgcolor="white")
     return fig
 
 
 def page_architecture():
     st.title("🏗️ Updated Architecture")
-    st.write(
-        "Responsibilities are separated across layers. **LangGraph** is the central "
-        "controller, **YAML** governs truth, **ChromaDB** retrieves context, "
-        "**NetworkX** selects relationships, **DuckDB** produces evidence, and the "
-        "**conditional ToT** module explores competing hypotheses only when needed. "
-        "The LLM helps plan and summarize but is never a source of truth."
-    )
-
+    st.write("LangGraph is the central controller. Tools and knowledge layers do not act "
+             "independently — retrieval, validation, graph traversal, ToT, SQL, and synthesis "
+             "are explicit workflow nodes. YAML governs truth; the LLM is never a source of truth.")
     st.subheader("Controller flow (LangGraph state machine)")
     st.plotly_chart(_flow_figure(), width="stretch")
-
     st.subheader("Architecture layers")
-    _table(P.ARCH_LAYERS, ["Layer", "Responsibility"])
-
+    _table(P.ARCH_LAYERS, ["Layer", "Component", "Responsibility", "Implementation control"])
     st.subheader("Knowledge graph generated from the YAML catalog (NetworkX)")
     st.caption(f"Live render of the catalog (v{catalog.version()}, hash {catalog.content_hash()}). "
-               "Edges connect the conversion metric to its drivers, tables, and accountable owners.")
+               "metric → driver → table / system / owner.")
     st.plotly_chart(_graph_figure(), width="stretch")
-
     col1, col2 = st.columns(2)
     with col1:
+        st.subheader("YAML catalog files")
+        _table(P.YAML_FILES, ["File", "Contents", "Used by"])
+        st.subheader("Graph objects")
+        _table(P.GRAPH_OBJECTS, ["Object", "Examples", "Purpose"])
+    with col2:
+        st.subheader("Agent roles")
+        _table(P.AGENT_ROLES, ["Agent / role", "Purpose", "Primary tools", "MVP output"])
         st.subheader("Source-conflict & priority rules")
         _table(P.CONFLICT_RULES, ["Situation", "Decision rule", "User-facing behavior"])
-    with col2:
-        st.subheader("ToT scoring rubric")
-        rubric = [(c, f"0–{m}") for c, m in P.TOT_RUBRIC]
-        rubric.append(("**Maximum total**", f"**{sum(m for _, m in P.TOT_RUBRIC)}**"))
-        _table(rubric, ["Evaluation criterion", "Score"])
-        st.caption(P.TOT_THRESHOLDS)
 
 
 # ==========================================================================
@@ -212,95 +173,83 @@ def page_architecture():
 # ==========================================================================
 def page_plan():
     st.title("🗺️ Step-by-Step Implementation Plan")
-
+    st.subheader("Phase roadmap")
+    _table(P.PHASE_ROADMAP, ["Phase", "Primary objective", "Scope", "Success criteria"])
     st.subheader("Implementation milestones")
-    built = {"1", "2", "3", "5", "6", "7"}  # phases substantially realized in this prototype
-    rows = []
-    for i, (phase, deliv, exit_c) in enumerate(P.MILESTONES, start=1):
-        status = "✅ Built" if str(i) in built else ("🟡 Partial" if i == 4 else "⬜ Planned")
-        rows.append((phase, deliv, exit_c, status))
-    _table(rows, ["Phase", "Deliverables", "Exit criteria", "Prototype status"])
-    st.caption("Phase 4 (ChromaDB vector DB) is modeled via `catalog.chunks()` with version/"
-               "content_hash metadata; embeddings are optional. Phase 8 (demo polish) is this app.")
-
+    built = {"1", "2", "3", "4", "5", "6", "7", "8", "9"}
+    rows = [(ph, d, ex, "✅ Built" if ph.split(".")[0] in built else "⬜ Backlog")
+            for ph, d, ex in P.MILESTONES]
+    _table(rows, ["Phase / milestone", "Deliverables", "Exit criteria", "Prototype status"])
+    st.subheader("Conditional Tree-of-Thought — depth model")
+    _table(P.TOT_DEPTH, ["ToT element", "Definition in this project"])
+    c1, c2 = st.columns(2)
+    with c1:
+        st.subheader("ToT scoring rubric")
+        rub = [(c, f"0–{m}") for c, m in P.TOT_RUBRIC]
+        rub.append(("**Maximum total**", f"**{sum(m for _, m in P.TOT_RUBRIC)}**"))
+        _table(rub, ["Evaluation criterion", "Score"])
+        st.caption(P.TOT_THRESHOLDS)
+    with c2:
+        st.subheader("Synthetic tables (Plan 14.2)")
+        _table(P.SYNTH_TABLES, ["Table", "Grain", "Phase I role"])
+    st.subheader("Seeded demo scenarios")
+    _table(P.SCENARIOS, ["Seeded scenario", "Injected pattern", "Expected evidence", "Owner"])
     st.subheader("Functional requirements")
-    _table(P.FUNC_REQS, ["ID", "Requirement", "Acceptance criteria"])
-
+    _table(P.FUNC_REQS, ["ID", "Requirement", "Priority", "Acceptance criteria"])
+    with st.expander("Non-functional requirements"):
+        _table(P.NON_FUNCTIONAL, ["Area", "Requirement"])
     st.subheader("MVP demo questions")
     for i, q in enumerate(P.DEMO_QUESTIONS, 1):
         st.markdown(f"{i}. {q}")
-
-    st.subheader("Seeded synthetic scenarios")
-    _table(P.SCENARIOS, ["Seeded scenario", "Injected pattern", "Expected evidence", "Owner"])
 
 
 # ==========================================================================
 # PAGE: Live Demo
 # ==========================================================================
-def _branch_card(b):
+def _scorecard(b):
     color = CONF_COLOR.get(b.confidence, "#64748b")
-    st.markdown(
-        f"<div style='border-left:5px solid {color};padding:6px 12px;margin:6px 0;"
-        f"background:#f8fafc;border-radius:4px'>"
-        f"<b>{b.label}</b> &nbsp;·&nbsp; score <b>{b.total}/14</b> &nbsp;·&nbsp; "
-        f"<span style='color:{color}'><b>{b.confidence}</b></span><br>"
-        f"<span style='font-size:0.9em;color:#475569'>{b.finding}</span></div>",
-        unsafe_allow_html=True)
-    with st.expander(f"Score breakdown — {b.label}"):
-        sb = pd.DataFrame([{"criterion": k, "score": v} for k, v in b.scores.items()])
-        st.dataframe(sb, width="stretch", hide_index=True)
-        if b.sql:
-            st.code(b.sql, language="sql")
-        if b.evidence is not None:
-            st.dataframe(b.evidence, width="stretch", hide_index=True)
-
-
-def page_demo():
-    st.title("🔬 Live Demo — Governed Investigation")
-    st.write(
-        "This runs the **actual** workflow on synthetic data: governed retrieval → "
-        "read-only DuckDB evidence → conditional Tree-of-Thought beam search "
-        f"(width {BEAM_WIDTH}, depth 2) → guardrails → grounded answer. "
-        f"Query budget = {QUERY_BUDGET} (1 baseline + 3 driver-path + 1 follow-up)."
-    )
-
-    options = P.DEMO_QUESTIONS + ["✍️ Custom question…"]
-    choice = st.selectbox("Pick a demo question", options, index=0)
-    question = st.text_input("Question", value="" if choice.startswith("✍️") else choice)
-
-    run = st.button("Run investigation", type="primary")
-    if not run:
-        st.caption("Tip: try a write request like *“update the paid_social budget”* to see "
-                   "the read-only guardrail refuse and convert it to a recommendation.")
-        return
-    if not question.strip():
-        st.warning("Enter a question first.")
-        return
-
-    with st.spinner("Investigating…"):
-        trace = run_investigation(question)
-
-    # Guardrail refusal (FR-09)
-    if trace.get("refusal"):
-        st.error("🛡️ **Guardrail (read-only):** " + trace["refusal"])
-
-    # Headline
-    a = trace["answer"]
-    bl = trace["baseline"]
-    st.subheader("Answer")
-    st.markdown(f"### {a['headline']}")
-    conf_c = "#16a34a" if a["confidence"] == "high" else "#d97706"
-    st.markdown(f"**Confidence:** <span style='color:{conf_c}'>{a['confidence']}</span>",
+    st.markdown(f"<div style='border-left:5px solid {color};padding:6px 12px;margin:6px 0;"
+                f"background:#f8fafc;border-radius:4px'><b>{b.label}</b> · score "
+                f"<b>{b.total}/14</b> · <span style='color:{color}'><b>{b.confidence}</b></span>"
+                f"<br><span style='font-size:0.9em;color:#475569'>{b.finding}</span></div>",
                 unsafe_allow_html=True)
-    st.markdown(f"**Certified definition used:** {a['definition']}")
 
+
+def _tab_business(t):
+    a = t["answer"]; bl = t["baseline"]
+    st.markdown(f"### {a['headline']}")
+    st.caption("Level 1 · Business summary — for business users and leaders")
+    conf_c = "#16a34a" if a["confidence"] == "high" else "#d97706"
+    st.markdown(f"**Confidence:** <span style='color:{conf_c}'>{a['confidence']}</span>  ·  "
+                f"*drafting: {a.get('llm_mode')}*", unsafe_allow_html=True)
+    st.write(a["summary"])
     m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Yesterday conversion", f"{bl['target']:.2%}")
+    m1.metric("Yesterday", f"{bl['target']:.2%}")
     m2.metric("Prior 7-day avg", f"{bl['baseline']:.2%}")
     m3.metric("Change", f"{bl['pct_change']:+.1%}")
-    m4.metric("Queries used", f"{trace['queries_used']}/{QUERY_BUDGET}")
+    m4.metric("Queries used", f"{t['queries_used']}/{QUERY_BUDGET}")
+    st.markdown("**Likely drivers (selected by beam search):**")
+    for d in a["drivers"]:
+        c = CONF_COLOR.get(d["confidence"], "#16a34a")
+        st.markdown(f"<div style='border-left:5px solid {c};padding:6px 12px;margin:5px 0;"
+                    f"background:#f0fdf4;border-radius:4px'><b>{d['label']}</b> → <b>{d['owner']}</b> · "
+                    f"<span style='color:{c}'>{d['confidence']}</span> (score {d['score']}/14)<br>"
+                    f"<span style='font-size:0.9em;color:#475569'>{d['finding']}</span></div>",
+                    unsafe_allow_html=True)
+    if a["contributors"]:
+        st.markdown("**Possible contributors (outside the beam):**")
+        for d in a["contributors"]:
+            st.markdown(f"- **{d['label']}** → {d['owner']} (score {d['score']}/14) — {d['finding']}")
+    if a["pruned"]:
+        st.markdown("**Pruned hypotheses:**")
+        for p in a["pruned"]:
+            st.markdown(f"- ~~{p['label']}~~ (score {p['score']}/14) — {p['reason']}")
+    st.info("**Recommendation:** " + a["recommendation"])
 
-    # Baseline chart
+
+def _tab_evidence(t):
+    st.caption("Level 2 · Evidence summary — for analysts and managers")
+    bl = t["baseline"]
     series = bl["series"].copy()
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=series["date"], y=series["conversion"], mode="lines+markers",
@@ -309,60 +258,134 @@ def page_demo():
                   annotation_text="prior 7-day avg")
     fig.add_trace(go.Scatter(x=[series["date"].iloc[-1]], y=[bl["target"]], mode="markers",
                              marker=dict(size=14, color="#dc2626"), name="yesterday"))
-    fig.update_layout(height=300, margin=dict(l=10, r=10, t=30, b=10),
-                      yaxis_tickformat=".1%", plot_bgcolor="white",
-                      title="Digital conversion: daily vs prior 7-day average")
+    fig.update_layout(height=300, margin=dict(l=10, r=10, t=30, b=10), yaxis_tickformat=".1%",
+                      plot_bgcolor="white", title="Digital conversion: daily vs prior 7-day average")
     st.plotly_chart(fig, width="stretch")
+    st.markdown("**Per-driver evidence (read-only DuckDB):**")
+    for b in t["depth1"]:
+        if b.evidence is None:
+            continue
+        with st.expander(f"{b.label} — evidence ({b.confidence})"):
+            st.dataframe(b.evidence, width="stretch", hide_index=True)
 
-    # Drivers
-    st.markdown("#### Likely drivers (selected by beam search)")
-    for d in a["drivers"]:
-        c = CONF_COLOR.get(d["confidence"], "#16a34a")
-        st.markdown(
-            f"<div style='border-left:5px solid {c};padding:6px 12px;margin:6px 0;"
-            f"background:#f0fdf4;border-radius:4px'><b>{d['label']}</b> → route to "
-            f"<b>{d['owner']}</b> &nbsp;·&nbsp; <span style='color:{c}'>{d['confidence']}</span>"
-            f" (score {d['score']}/14)<br><span style='font-size:0.9em;color:#475569'>"
-            f"{d['finding']}</span></div>", unsafe_allow_html=True)
-    if a["contributors"]:
-        st.markdown("#### Possible contributors (qualified, outside the beam)")
-        for d in a["contributors"]:
-            st.markdown(f"- **{d['label']}** → {d['owner']} (score {d['score']}/14) — {d['finding']}")
-    if a["pruned"]:
-        st.markdown("#### Pruned hypotheses")
-        for p in a["pruned"]:
-            st.markdown(f"- ~~**{p['label']}**~~ (score {p['score']}/14) — {p['reason']}")
 
-    st.markdown(f"**Recommendation:** {a['recommendation']}")
-    with st.expander("Caveats & data-freshness limits"):
-        for cv in a["caveats"]:
-            st.markdown(f"- {cv}")
+def _tab_trust(t):
+    st.caption("Level 3 · Trust details — for analysts, reviewers, instructor demo")
+    a = t["answer"]
+    st.markdown(f"**Selected YAML metric definition:** {a['definition']}")
+    st.markdown(f"**Catalog version / hash:** v{t['catalog_version']} · `{t['catalog_hash']}`")
+    idx = _index()
+    sync = idx.sync_status()
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Vector embedder", sync["embedder"].split("/")[0])
+    c2.metric("Index in sync", "Yes" if sync["in_sync"] else "No")
+    c3.metric("LLM mode", a.get("llm_mode", "n/a").split(":")[0])
+    st.caption(f"Embedder: {sync['embedder']} · {sync['n_chunks']} governed chunks indexed.")
+    st.markdown("**Retrieved context (top-k from ChromaDB):**")
+    if t["retrieval"]:
+        rows = [{"source_type": r["metadata"].get("source_type"), "name": r["metadata"].get("name"),
+                 "owner": r["metadata"].get("owner"), "version": r["metadata"].get("version"),
+                 "validated_vs_yaml": r["validated"], "distance": round(r["distance"], 3)}
+                for r in t["retrieval"]]
+        st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+    st.markdown("**Graph path (NetworkX):**")
+    g = graph.build_graph()
+    for b in t["beam"]:
+        gp = graph.driver_path(g, b.driver)
+        if gp:
+            st.markdown(f"- `{gp['path']}`  → system: {gp.get('system')}")
+    st.markdown("**Caveats:**")
+    for cv in a["caveats"]:
+        st.markdown(f"- {cv}")
 
-    # Reasoning trace
-    st.divider()
-    st.subheader("🧭 Reasoning trace (debug)")
-    st.caption("Tools called in order — every claim is backed by a validated, read-only query.")
-    for s in trace["steps"]:
-        icon = "✅" if s["ok"] else "⚠️"
-        st.markdown(f"{icon} **{s['node']}** — {s['detail']}")
 
-    # ToT detail
-    st.subheader("🌳 Tree-of-Thought branch scorecards")
-    if trace["tot_activated"]:
-        st.caption("ToT activated: multiple plausible driver paths competed.")
-        for b in trace["depth1"]:
-            _branch_card(b)
-        if trace.get("depth2"):
-            st.markdown("**Depth-2 refinement (surviving branches → sub-drivers):**")
-            for d in trace["depth2"]:
-                st.markdown(f"- {d['refined']}")
-    else:
-        st.caption("ToT not activated — a single obvious path did not require beam search.")
+def _tab_tot(t):
+    st.caption("Level 3 · ToT trace — candidate branches, scores, pruning, selection")
+    if not t["tot_activated"]:
+        st.info("ToT not activated for this question (single obvious path).")
+        return
+    st.markdown(f"**Beam (kept top {BEAM_WIDTH}):**")
+    for b in t["beam"]:
+        _scorecard(b)
+        with st.expander(f"Score breakdown & SQL — {b.label}"):
+            st.dataframe(pd.DataFrame([{"criterion": k, "score": v} for k, v in b.scores.items()]),
+                         width="stretch", hide_index=True)
+            if b.sql:
+                st.code(b.sql, language="sql")
+    if t["deferred"]:
+        st.markdown("**Deferred (qualified, outside beam):**")
+        for b in t["deferred"]:
+            _scorecard(b)
+    if t["pruned"]:
+        st.markdown("**Pruned (below threshold / ungoverned):**")
+        for b in t["pruned"]:
+            _scorecard(b)
+    if t["depth2"]:
+        st.markdown("**Depth-2 refinement:**")
+        for d in t["depth2"]:
+            st.markdown(f"- {d['refined']}")
 
+
+def _tab_audit(t):
+    st.caption("Level 4 · Technical audit — LangGraph nodes, tool calls, SQL validation")
+    audit = t["audit"]
+    st.markdown(f"**run_id:** `{audit.run_id}`  ·  **events:** {len(audit.events)}  ·  "
+                f"**queries:** {t['queries_used']}/{QUERY_BUDGET}")
+    st.markdown("**Decision log (step-by-step):**")
+    for s in t["steps"]:
+        st.markdown(f"{'✅' if s['ok'] else '⚠️'} **{s['node']}** — {s['detail']}")
+    st.markdown("**Audit event trail (section 17.2 schema):**")
+    cols = ["event_id", "workflow_node", "decision_type", "tool_name", "output_summary",
+            "score_or_confidence", "status"]
+    st.dataframe(pd.DataFrame(audit.events)[cols], width="stretch", hide_index=True)
     with st.expander("Baseline SQL (read-only, validated)"):
-        ok, reason = guardrails.check_sql(bl["sql"])
-        st.code(bl["sql"], language="sql")
+        ok, reason = guardrails.check_sql(t["baseline"]["sql"])
+        st.code(t["baseline"]["sql"], language="sql")
         st.caption(("✅ " if ok else "⚠️ ") + reason)
+
+
+def _tab_actions(t):
+    st.caption("Action log — human-reviewed recommendations only; no operational writes")
+    actions = t["audit"].actions
+    if actions:
+        st.dataframe(pd.DataFrame(actions), width="stretch", hide_index=True)
+    st.warning("Recommended actions are for human review only. The assistant never writes to "
+               "ERP, OMS, CRM, pricing, inventory, campaign, fulfillment, service, or finance systems.")
+
+
+def page_demo():
+    st.title("🔬 Live Demo — Governed Investigation")
+    st.write("Runs the real LangGraph pipeline on Faker-generated synthetic data, then exposes "
+             "the four trace levels from the plan (business → evidence → trust → technical audit).")
+    probe = llm.probe()
+    st.caption(f"LLM: {probe['detail']}")
+    options = P.DEMO_QUESTIONS + ["✍️ Custom question…"]
+    choice = st.selectbox("Pick a demo question", options, index=0)
+    question = st.text_input("Question", value="" if choice.startswith("✍️") else choice)
+    if not st.button("Run investigation", type="primary"):
+        st.caption("Tip: try *“update the paid_social budget”* to see the read-only guardrail refuse.")
+        return
+    if not question.strip():
+        st.warning("Enter a question first.")
+        return
+    with st.spinner("Investigating…"):
+        t = run_investigation(question)
+    if t.get("refusal"):
+        st.error("🛡️ **Guardrail (read-only):** " + t["refusal"])
+    tabs = st.tabs(["💬 Business answer", "📊 Evidence", "🔎 Trust details",
+                    "🌳 ToT trace", "🧭 Technical audit", "📋 Action log"])
+    with tabs[0]:
+        _tab_business(t)
+    with tabs[1]:
+        _tab_evidence(t)
+    with tabs[2]:
+        _tab_trust(t)
+    with tabs[3]:
+        _tab_tot(t)
+    with tabs[4]:
+        _tab_audit(t)
+    with tabs[5]:
+        _tab_actions(t)
 
 
 # ==========================================================================
@@ -370,45 +393,36 @@ def page_demo():
 # ==========================================================================
 def page_interactive_plan():
     st.title("📄 Interactive Project Plan")
-    st.caption(P.SUBTITLE)
-    st.write("The full plan, section by section. Use the button to generate a standalone, "
-             "shareable HTML version.")
-
+    st.caption(f"{P.SUBTITLE} · {P.TAGLINE}")
     if st.button("⬇️ Generate downloadable HTML", type="primary"):
         from build_html import render_html
-        html = render_html()
-        st.download_button("Download project_plan.html", data=html,
+        st.download_button("Download project_plan.html", data=render_html(),
                            file_name="project_plan.html", mime="text/html")
-        st.success("HTML generated. Click the download button above.")
-
-    with st.expander("1 · Executive summary", expanded=True):
-        st.write(P.EXECUTIVE_SUMMARY)
-    with st.expander("2 · Feasibility decision"):
-        st.write(P.FEASIBILITY)
-    with st.expander("3 · Business problem & users"):
-        st.write(P.BUSINESS_PROBLEM)
-    with st.expander("4 · Capstone fit"):
-        _table(P.CAPSTONE_FIT, ["Concept", "Demonstration", "Success measure"])
-    with st.expander("5 · Free & local tool stack"):
-        _table(P.TOOL_STACK, ["Tool", "Role", "Free?", "MVP notes"])
-    with st.expander("6 · Architecture layers"):
-        _table(P.ARCH_LAYERS, ["Layer", "Responsibility"])
-    with st.expander("7 · ToT scoring rubric"):
-        _table([(c, f"0–{m}") for c, m in P.TOT_RUBRIC], ["Criterion", "Score"])
-        st.caption(P.TOT_THRESHOLDS)
-    with st.expander("8 · Source-conflict rules"):
-        _table(P.CONFLICT_RULES, ["Situation", "Decision", "Behavior"])
-    with st.expander("9 · Seeded synthetic scenarios"):
-        _table(P.SCENARIOS, ["Scenario", "Pattern", "Expected evidence", "Owner"])
-    with st.expander("10 · MVP demo questions"):
-        for i, q in enumerate(P.DEMO_QUESTIONS, 1):
-            st.markdown(f"{i}. {q}")
-    with st.expander("11 · Functional requirements"):
-        _table(P.FUNC_REQS, ["ID", "Requirement", "Acceptance criteria"])
-    with st.expander("12 · Implementation milestones"):
-        _table(P.MILESTONES, ["Phase", "Deliverables", "Exit criteria"])
-    with st.expander("13 · Risks & mitigations"):
-        _table(P.RISKS, ["Risk", "Mitigation"])
+        st.success("HTML generated — click the download button above.")
+    sections = [
+        ("1 · Executive summary", lambda: st.write(P.EXECUTIVE_SUMMARY)),
+        ("2 · Feasibility decision", lambda: st.write(P.FEASIBILITY)),
+        ("3 · Business problem & users", lambda: _table(P.BUSINESS_ROLES, ["Role", "Question", "Value"])),
+        ("4 · Phase roadmap", lambda: _table(P.PHASE_ROADMAP, ["Phase", "Objective", "Scope", "Success"])),
+        ("5 · Tool stack", lambda: _table(P.TOOL_STACK, ["Tool", "Role", "Free?", "MVP notes"])),
+        ("6 · Architecture layers", lambda: _table(P.ARCH_LAYERS, ["Layer", "Component", "Responsibility", "Control"])),
+        ("7 · YAML catalog files", lambda: _table(P.YAML_FILES, ["File", "Contents", "Used by"])),
+        ("9 · Knowledge graph objects", lambda: _table(P.GRAPH_OBJECTS, ["Object", "Examples", "Purpose"])),
+        ("10 · Agent roles", lambda: _table(P.AGENT_ROLES, ["Role", "Purpose", "Tools", "Output"])),
+        ("11 · ToT depth model", lambda: _table(P.TOT_DEPTH, ["Element", "Definition"])),
+        ("12 · Source-conflict rules", lambda: _table(P.CONFLICT_RULES, ["Situation", "Decision", "Behavior"])),
+        ("14 · Synthetic scenarios", lambda: _table(P.SCENARIOS, ["Scenario", "Pattern", "Evidence", "Owner"])),
+        ("16 · Functional requirements", lambda: _table(P.FUNC_REQS, ["ID", "Requirement", "Priority", "Acceptance"])),
+        ("17 · UI & trace levels", lambda: (_table(P.UI_SECTIONS, ["Section", "Content"]),
+                                            _table(P.TRACE_LEVELS, ["Level", "Audience", "Content"]))),
+        ("17.2 · Audit event schema", lambda: _table(P.AUDIT_SCHEMA, ["Field", "Example", "Purpose"])),
+        ("19 · Milestones", lambda: _table(P.MILESTONES, ["Phase", "Deliverables", "Exit criteria"])),
+        ("20 · Risks", lambda: _table(P.RISKS, ["Risk", "Mitigation"])),
+        ("24 · Readiness checklist", lambda: _table(P.READINESS, ["Question", "Answer"])),
+    ]
+    for i, (title, render) in enumerate(sections):
+        with st.expander(title, expanded=(i == 0)):
+            render()
 
 
 # ==========================================================================
@@ -427,10 +441,8 @@ st.sidebar.title("🛍️ Retail Analytics Assistant")
 st.sidebar.caption("Governed investigation workflow · Checkpoint 4.1")
 selection = st.sidebar.radio("Navigate", list(PAGES.keys()))
 st.sidebar.divider()
-st.sidebar.markdown(
-    f"**Catalog:** v{catalog.version()}  \n`{catalog.content_hash()}`  \n\n"
-    "**Read-only** · synthetic data · free/local stack")
-st.sidebar.caption("LLM (Ollama) & ChromaDB embeddings are optional; the demo runs "
-                   "with a deterministic stand-in and no external services.")
-
+st.sidebar.markdown(f"**Catalog:** v{catalog.version()}  \n`{catalog.content_hash()}`  \n\n"
+                    "**Read-only** · Faker synthetic data · free/local stack")
+st.sidebar.caption("ReAct + RAG + Knowledge Graph + conditional ToT beam search. "
+                   "Ollama & sentence-transformers are optional with fallbacks.")
 PAGES[selection]()

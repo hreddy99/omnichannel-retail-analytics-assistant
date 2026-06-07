@@ -1,5 +1,7 @@
-# Omnichannel Retail Analytics Assistant - MVP dependencies
-# All free / local. No paid cloud services required.
+# Omnichannel Retail Analytics Assistant - free / local stack (Plan section 5)
+# All components run locally on a personal PC. No paid cloud services.
+
+# --- Core (required to run the app) ---
 streamlit>=1.32
 pandas>=2.0
 numpy>=1.26
@@ -7,9 +9,21 @@ duckdb>=0.10
 networkx>=3.0
 plotly>=5.18
 PyYAML>=6.0
+Faker>=22.0                # synthetic data generation (no PII, fixed seed)
 
-# Optional (documented in the plan, NOT required to run the prototype demo):
-#   langgraph        # orchestration state machine (the demo ships a deterministic stand-in)
-#   chromadb         # vector retrieval over YAML chunks
-#   sentence-transformers  # local embeddings (all-MiniLM-L6-v2)
-#   ollama           # local LLM for planning / drafting
+# --- Governed agent stack (Plan section 5) ---
+langgraph>=0.2             # workflow state machine / controller
+chromadb>=0.5             # local vector retrieval (built-in all-MiniLM-L6-v2 ONNX)
+sentence-transformers>=2.2 # local embeddings (all-MiniLM-L6-v2); pulls torch
+ollama>=0.3               # local LLM client (optional at runtime - see note)
+
+# NOTE on Ollama: the python client is installed here, but Ollama also needs a
+# running local server + a pulled model (e.g. `ollama run llama3.2`). On a
+# personal PC that is a one-time setup. In a headless/cloud sandbox there is no
+# Ollama daemon, so the app detects this and falls back to deterministic,
+# template-based planning/summarization. The fallback is surfaced in the UI.
+#
+# NOTE on embeddings: ChromaDB ships an ONNX all-MiniLM-L6-v2 embedder that needs
+# a one-time model download. If sentence-transformers/torch or network are
+# unavailable, retrieval falls back to a deterministic hashing embedder so the
+# demo still runs offline. The active embedder is shown in Trust details.

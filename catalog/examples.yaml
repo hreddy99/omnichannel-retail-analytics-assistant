@@ -1,0 +1,29 @@
+# Approved analysis plans + SQL templates (Plan sections 7.1, 13). The LLM may
+# fill parameters (date, metric, dimension, filter) but must not invent complex
+# SQL for the MVP. These are retrieved by ChromaDB and used as SQL fallback.
+section_id: examples
+sql_templates:
+  conversion_baseline:
+    purpose: "Daily digital conversion series for baseline vs target comparison."
+    sql: |
+      WITH s AS (
+        SELECT date, count(*) AS sessions,
+               sum(CASE WHEN converted THEN 1 ELSE 0 END) AS orders
+        FROM fact_sessions GROUP BY date)
+      SELECT date, orders * 1.0 / sessions AS conversion
+      FROM s ORDER BY date
+  channel_contribution:
+    purpose: "Per-channel session share and conversion on the target day."
+    sql: |
+      SELECT channel, count(*) AS sessions,
+             sum(CASE WHEN converted THEN 1 ELSE 0 END) * 1.0 / count(*) AS conversion
+      FROM fact_sessions WHERE date = :target_day
+      GROUP BY channel ORDER BY sessions DESC
+
+example_questions:
+  - question: "Why did digital conversion drop yesterday compared with the prior 7-day average?"
+    plan: "Validate metric, baseline vs target, then ToT over campaign/inventory/fulfillment/funnel."
+  - question: "Which channels or campaigns contributed to the change?"
+    plan: "Channel contribution query; rank by traffic share and conversion delta."
+  - question: "Did inventory availability contribute to the conversion decline?"
+    plan: "Category stockout vs baseline; correlate high views with low availability."
