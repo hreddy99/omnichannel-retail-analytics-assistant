@@ -1,0 +1,15 @@
+# Omnichannel Retail Analytics Assistant - MVP dependencies
+# All free / local. No paid cloud services required.
+streamlit>=1.32
+pandas>=2.0
+numpy>=1.26
+duckdb>=0.10
+networkx>=3.0
+plotly>=5.18
+PyYAML>=6.0
+
+# Optional (documented in the plan, NOT required to run the prototype demo):
+#   langgraph        # orchestration state machine (the demo ships a deterministic stand-in)
+#   chromadb         # vector retrieval over YAML chunks
+#   sentence-transformers  # local embeddings (all-MiniLM-L6-v2)
+#   ollama           # local LLM for planning / drafting
