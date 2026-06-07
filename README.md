@@ -28,6 +28,26 @@ it, the SQL validator blocks it and it is **pruned without spending query budget
 
 ## Quick start
 
+**Option A — one command (recommended).** A stdlib-only task runner (`tools.py`)
+creates the virtual environment, installs dependencies, validates the data, and
+launches the app:
+
+```bash
+python tools.py            # setup + validate + launch  (http://localhost:8501)
+```
+
+Other subcommands:
+
+```bash
+python tools.py setup      # create .venv and install dependencies
+python tools.py validate   # run the synthetic-data validation checks
+python tools.py html       # generate the standalone project_plan.html
+python tools.py run        # launch the Streamlit app (pass-through args, e.g. --server.port 8502)
+python tools.py doctor     # print environment / tool status
+```
+
+**Option B — manual.**
+
 ```bash
 pip install -r requirements.txt
 streamlit run app.py
