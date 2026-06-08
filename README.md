@@ -4,7 +4,7 @@
 (**ReAct + RAG + Knowledge Graph + Conditional Tree-of-Thought Beam Search**).
 
 A **governed agentic analytics assistant** (not a chatbot) that investigates retail
-performance questions — Phase I demo: *"Why did digital conversion drop yesterday
+performance questions — demo: *"Why did digital conversion drop yesterday
 vs the prior 7-day average?"* — by grounding every answer in a governed catalog and
 read-only query evidence before recommending action.
 
@@ -27,16 +27,16 @@ read-only SQL, freshness/version sync, source-conflict priority (YAML wins), and
 write refusal. Every step is recorded to an append-only audit trail, and findings
 become **human-reviewed recommendations** — never writes.
 
-### Multi-agent team (all phases)
+### Multi-agent team
 
 The domain investigations are run by a **team of specialized AI agents** dispatched
 **in parallel** by an Orchestrator — a deliberate design (see
 [`docs/multi_agent_design.md`](docs/multi_agent_design.md)):
 
 - **Specialization** — one analyst per domain (Marketing, Merchandising,
-  Fulfillment, Digital Analytics; **Phase II** adds Customer Service; **Phase III**
-  adds Finance + Vendor/Category + an Executive Summary agent), each owning its
-  tables, certified metric, and guardrails.
+  Fulfillment, Digital Analytics, Customer Service, Finance, and Vendor/Category,
+  plus an Executive Summary agent), each owning its tables, certified metric, and
+  guardrails.
 - **Parallelism** — independent read-only queries run concurrently (bounded thread
   pool); the UI reports the measured wall-clock vs. sequential time and speedup.
 - **Trade-offs handled** — coordination overhead (bounded pool + per-agent
@@ -46,8 +46,7 @@ The domain investigations are run by a **team of specialized AI agents** dispatc
   this graceful degradation live.
 
 The app runs **unified** — the full analyst team is dispatched on every
-investigation (phases are an internal team-composition detail, not a user
-control). The **Multi-agent team** tab shows the roster, parallel timeline,
+investigation. The **Multi-agent team** tab shows the roster, parallel timeline,
 per-analyst findings, coordination metrics, and the design trade-offs.
 
 A standout governance behavior: the ToT layer also proposes an *ungoverned*
@@ -101,12 +100,13 @@ python -m src.data_validation   # Plan section 14.4 checks
 | 🏠 Overview | Executive summary, business roles, enterprise/medallion alignment, capability alignment, status |
 | ✅ Feasibility Review | Verdict, free/local stack, **implementation issues found & handled**, readiness checklist, risks |
 | 🏗️ Architecture | LangGraph flow, live NetworkX graph, YAML files, agent roles, conflict rules |
-| 🗺️ Step-by-Step Plan | Phase roadmap, 10 milestones with status, ToT model + rubric, tables, FR-01–FR-12 |
-| 🔬 Live Demo | Runs the real pipeline; six tabs = the plan's four trace levels |
+| 🗺️ Step-by-Step Plan | Capability roadmap, milestones with status, ToT model + rubric, tables, FR-01–FR-12 |
+| 🔬 Live Demo | Runs the real pipeline; live step trace + multi-agent team + four trace levels |
 | 📄 Interactive Plan | Full plan section-by-section + downloadable `project_plan.html` |
 
-The **Live Demo** exposes Plan section 17's four trace levels as tabs: Business
-answer → Evidence → Trust details → ToT trace → Technical audit → Action log.
+The **Live Demo** streams each executing step, then exposes seven tabs: Business
+answer → Multi-agent team → Evidence → Trust details → ToT trace → Technical audit
+→ Action log.
 
 ## Free / local tool stack (Plan section 5)
 

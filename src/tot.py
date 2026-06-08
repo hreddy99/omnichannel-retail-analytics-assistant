@@ -128,7 +128,7 @@ def q_funnel(con, td, b0, b1):
 
 
 def q_service(con, td, b0, b1):
-    """Phase II: customer-contact spike, by reason code, vs baseline."""
+    """Customer-contact spike, by reason code, vs baseline."""
     sql = f"""
     SELECT reason_code,
            sum(CASE WHEN date=DATE '{td}' THEN 1 ELSE 0 END) AS contacts_target,
@@ -144,7 +144,7 @@ def q_service(con, td, b0, b1):
 
 
 def q_finance(con, td, b0, b1):
-    """Phase III: gross-to-net reconciliation caveat."""
+    """Gross-to-net reconciliation caveat."""
     sql = f"""
     SELECT sum(CASE WHEN date=DATE '{td}' THEN gross_sales ELSE 0 END) AS gross_t,
            sum(CASE WHEN date=DATE '{td}' THEN net_revenue ELSE 0 END) AS net_t,
@@ -165,7 +165,7 @@ def q_finance(con, td, b0, b1):
 
 
 def q_vendor(con, td, b0, b1):
-    """Phase III: vendor/category stockout impact weighted by sales exposure."""
+    """Vendor/category stockout impact weighted by sales exposure."""
     sql = f"""
     WITH cat_sales AS (
       SELECT category_id, sum(item_amount) AS sales

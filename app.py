@@ -185,9 +185,7 @@ def page_architecture():
     mc1, mc2 = st.columns(2)
     with mc1:
         st.markdown("**Specialized analyst team**")
-        _table(P.ANALYST_TEAM, ["Analyst", "Domain", "Phase", "Governed driver / focus"])
-        st.markdown("**Phase scoping**")
-        _table(P.PHASE_TEAM, ["Phase", "Analysts", "Focus"])
+        _table(P.ANALYST_TEAM, ["Analyst", "Domain", "Governed driver / focus"])
     with mc2:
         st.markdown("**When we use multiple agents (and when we don't)**")
         _table(P.MULTI_AGENT_WHEN, ["Decision", "Rationale"])
@@ -200,13 +198,13 @@ def page_architecture():
 # ==========================================================================
 def page_plan():
     st.title("🗺️ Step-by-Step Implementation Plan")
-    st.subheader("Phase roadmap")
-    _table(P.PHASE_ROADMAP, ["Phase", "Primary objective", "Scope", "Success criteria"])
+    st.subheader("Capability roadmap")
+    _table(P.PHASE_ROADMAP, ["Stage", "Primary objective", "Scope", "Success criteria"])
     st.subheader("Implementation milestones")
     built = {"1", "2", "3", "4", "5", "6", "7", "8", "9"}
     rows = [(ph, d, ex, "✅ Built" if ph.split(".")[0] in built else "⬜ Backlog")
             for ph, d, ex in P.MILESTONES]
-    _table(rows, ["Phase / milestone", "Deliverables", "Exit criteria", "Prototype status"])
+    _table(rows, ["Milestone", "Deliverables", "Exit criteria", "Prototype status"])
     st.subheader("Conditional Tree-of-Thought — depth model")
     _table(P.TOT_DEPTH, ["ToT element", "Definition in this project"])
     c1, c2 = st.columns(2)
@@ -217,8 +215,8 @@ def page_plan():
         _table(rub, ["Evaluation criterion", "Score"])
         st.caption(P.TOT_THRESHOLDS)
     with c2:
-        st.subheader("Synthetic tables (Plan 14.2)")
-        _table(P.SYNTH_TABLES, ["Table", "Grain", "Phase I role"])
+        st.subheader("Synthetic tables")
+        _table(P.SYNTH_TABLES, ["Table", "Grain", "Role"])
     st.subheader("Seeded demo scenarios")
     _table(P.SCENARIOS, ["Seeded scenario", "Injected pattern", "Expected evidence", "Owner"])
     st.subheader("Functional requirements")
@@ -493,7 +491,7 @@ def page_interactive_plan():
         ("1 · Executive summary", lambda: st.write(P.EXECUTIVE_SUMMARY)),
         ("2 · Feasibility decision", lambda: st.write(P.FEASIBILITY)),
         ("3 · Business problem & users", lambda: _table(P.BUSINESS_ROLES, ["Role", "Question", "Value"])),
-        ("4 · Phase roadmap", lambda: _table(P.PHASE_ROADMAP, ["Phase", "Objective", "Scope", "Success"])),
+        ("4 · Capability roadmap", lambda: _table(P.PHASE_ROADMAP, ["Stage", "Objective", "Scope", "Success"])),
         ("5 · Tool stack", lambda: _table(P.TOOL_STACK, ["Tool", "Role", "Free?", "MVP notes"])),
         ("6 · Architecture layers", lambda: _table(P.ARCH_LAYERS, ["Layer", "Component", "Responsibility", "Control"])),
         ("7 · YAML catalog files", lambda: _table(P.YAML_FILES, ["File", "Contents", "Used by"])),
@@ -506,7 +504,7 @@ def page_interactive_plan():
         ("17 · UI & trace levels", lambda: (_table(P.UI_SECTIONS, ["Section", "Content"]),
                                             _table(P.TRACE_LEVELS, ["Level", "Audience", "Content"]))),
         ("17.2 · Audit event schema", lambda: _table(P.AUDIT_SCHEMA, ["Field", "Example", "Purpose"])),
-        ("19 · Milestones", lambda: _table(P.MILESTONES, ["Phase", "Deliverables", "Exit criteria"])),
+        ("19 · Milestones", lambda: _table(P.MILESTONES, ["Milestone", "Deliverables", "Exit criteria"])),
         ("20 · Risks", lambda: _table(P.RISKS, ["Risk", "Mitigation"])),
         ("24 · Readiness checklist", lambda: _table(P.READINESS, ["Question", "Answer"])),
     ]

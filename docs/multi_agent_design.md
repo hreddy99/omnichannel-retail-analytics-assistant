@@ -13,27 +13,28 @@ into support roles and a parallel analyst team:
 
 | Role | Type | Responsibility |
 |------|------|----------------|
-| Analytics Orchestrator | support | Routes the team, sets phase scope, applies query budget + stopping. |
+| Analytics Orchestrator | support | Routes the team, applies query budget + stopping. |
 | Semantic Agent | support | Retrieves certified definitions/templates (ChromaDB) and validates vs YAML. |
 | Graph Reasoning Agent | support | Maps metric → driver → table → owner (NetworkX). |
 | Domain analysts (×N) | **parallel** | One analyst per domain; each runs one read-only DuckDB query and returns a finding + signal. |
 | Critic / Evaluator | support | Scores each analyst's branch on the 0–14 rubric; prunes weak/ungoverned paths. |
 | Synthesis Agent | support | Ranks supported drivers and writes the grounded answer. |
-| Executive Summary Agent | support | Composes a leadership summary across phases (Phase III / all). |
+| Executive Summary Agent | support | Composes owner-routed recommended actions for leadership. |
 
-### Specialized analysts by phase
+### Specialized analysts
 
-| Analyst | Domain | Phase | Governed driver |
-|---------|--------|-------|-----------------|
-| Marketing | marketing | I | `campaign_mix` |
-| Merchandising | merchandising | I | `inventory_availability` |
-| Fulfillment | fulfillment | I | `fulfillment_constraints` |
-| Digital Analytics | analytics | I | `funnel_behavior` |
-| Customer Service | service | II | `service_signal` |
-| Finance | finance | III | `finance_caveat` |
-| Vendor / Category | merchandising | III | `vendor_insight` |
+| Analyst | Domain | Governed driver |
+|---------|--------|-----------------|
+| Marketing | marketing | `campaign_mix` |
+| Merchandising | merchandising | `inventory_availability` |
+| Fulfillment | fulfillment | `fulfillment_constraints` |
+| Digital Analytics | analytics | `funnel_behavior` |
+| Customer Service | service | `service_signal` |
+| Finance | finance | `finance_caveat` |
+| Vendor / Category | merchandising | `vendor_insight` |
 
-Each phase **adds** analysts; the Orchestrator dispatches only those in scope.
+The app runs unified — the Orchestrator dispatches the full team every time and
+the Critic decides what matters.
 
 ## Why multi-agent (the capability we want)
 
@@ -54,7 +55,6 @@ Each phase **adds** analysts; the Orchestrator dispatches only those in scope.
 | Use a single analyst | Narrow, single-domain question — no team, no coordination overhead. |
 | Run analysts in parallel | Queries are independent and read-only. |
 | Keep one central Critic | Uniform scoring standards across all specialists. |
-| Scope by phase | Only dispatch analysts relevant to the requested phase. |
 
 ## Trade-offs accepted (and mitigations)
 
@@ -76,10 +76,11 @@ mitigation.
 
 ## Where it lives in the code
 
-- `src/agents.py` — `DomainAgent`, `AgentResult`, parallel `dispatch()`, phase
-  scoping, coordination log.
+- `src/agents.py` — `DomainAgent`, `AgentResult`, parallel `dispatch()`, the full
+  analyst team, coordination log.
 - `src/workflow.py` — `n_dispatch` (parallel team) and `n_critic` (scoring +
-  beam) nodes in the LangGraph controller; `n_synthesize` adds the executive
-  summary for Phase III.
+  beam) nodes in the LangGraph controller; `n_synthesize` adds owner-routed
+  recommended actions and an executive summary.
 - `src/tot.py` — per-domain evidence queries and the 0–14 scoring rubric.
-- `src/investigation.py` — `run_investigation(..., phase=, inject_failure=)`.
+- `src/investigation.py` — `run_investigation(..., inject_failure=)` and
+  `run_investigation_stream(...)` for live step streaming.

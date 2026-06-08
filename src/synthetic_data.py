@@ -227,7 +227,7 @@ def generate(seed: int = SEED) -> dict[str, pd.DataFrame]:
                                  "delay_days": round(actual - promise, 2),
                                  "options_available": options, "cancellations": max(cancels, 0)})
 
-        # ---- finance_daily (Phase III, light) ----
+        # ---- finance_daily (light) ----
         for cid in CAT_IDS:
             gross = float(rng.uniform(8000, 24000))
             returns = gross * float(rng.uniform(0.04, 0.10))
@@ -239,7 +239,7 @@ def generate(seed: int = SEED) -> dict[str, pd.DataFrame]:
                              "adjustments": round(adj, 2),
                              "net_revenue": round(gross - returns + tax + shipping + adj, 2)})
 
-        # ---- customer contacts (Phase II, light; small spike on target/west) ----
+        # ---- customer contacts (light; small spike on target/west) ----
         base_contacts = int(rng.normal(60, 10))
         if is_t:
             base_contacts = int(base_contacts * 1.5)

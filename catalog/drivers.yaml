@@ -40,7 +40,7 @@ drivers:
     sub_drivers: [cart_abandonment, checkout_dropoff]
     hypothesis: "On-site funnel defect reduced conversion independent of traffic."
   service_signal:
-    label: "Service contact spike (Phase II)"
+    label: "Service contact spike"
     domain: service
     owner: "Customer Service"
     metric: service_contact_rate
@@ -49,7 +49,7 @@ drivers:
     sub_drivers: [delivery_complaints, cancellation_contacts]
     hypothesis: "Operational issues drove a rise in customer contacts."
   finance_caveat:
-    label: "Finance caveat (Phase III)"
+    label: "Finance caveat"
     domain: finance
     owner: "Finance"
     metric: net_revenue_ratio
@@ -58,7 +58,7 @@ drivers:
     sub_drivers: [returns_timing, tax_shipping_adjustments]
     hypothesis: "Net revenue differs from gross sales due to returns/tax/shipping."
   vendor_insight:
-    label: "Vendor / category partner impact (Phase III)"
+    label: "Vendor / category partner impact"
     domain: merchandising
     owner: "Merchandising"
     metric: vendor_stockout_impact

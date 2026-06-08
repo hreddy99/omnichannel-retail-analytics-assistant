@@ -21,7 +21,7 @@ EXECUTIVE_SUMMARY = (
     "The Omnichannel Retail Analytics Assistant is a governed agentic research "
     "assistant that investigates retail performance questions across digital "
     "behavior, orders, campaigns, inventory, fulfillment, service, finance, and "
-    "category/vendor context. The Phase I MVP focuses on: why did digital conversion "
+    "category/vendor context. The assistant focuses on: why did digital conversion "
     "drop yesterday compared with the prior 7-day average? It is not a generic "
     "chatbot - it is a structured investigation workflow. LangGraph controls the "
     "reasoning state and tool calls; YAML is the authoritative source of truth; "
@@ -51,9 +51,9 @@ BUSINESS_ROLES = [
     ("Fulfillment operations", "Did fulfillment delays or reduced options hurt conversion?",
      "Checks option availability, promise delays, cancellations, affected regions."),
     ("Customer service", "Did operational issues increase contacts?",
-     "Links service contacts to fulfillment, inventory, order, cancellation signals (Phase II)."),
+     "Links service contacts to fulfillment, inventory, order, and cancellation signals."),
     ("Finance", "Why does ecommerce sales not match finance revenue?",
-     "Explains gross-to-net caveats: returns, timing, tax, shipping, adjustments (Phase III)."),
+     "Explains gross-to-net caveats: returns, timing, tax, shipping, adjustments."),
     ("Business leaders", "What happened and what should we investigate next?",
      "Concise evidence-backed summary with caveats, confidence, and action owners."),
 ]
@@ -124,15 +124,15 @@ CAPABILITY_ALIGNMENT = [
      "No writes; weak findings labeled possible, hypothesis, or inconclusive."),
 ]
 
-# Phase roadmap (phase, objective, scope, success)
+# Capability roadmap (stage, objective, scope, success)
 PHASE_ROADMAP = [
-    ("Phase I MVP", "Deliver the digital conversion investigation assistant.",
+    ("Core (current release)", "Deliver the digital conversion investigation assistant.",
      "Conversion, campaign/channel mix, inventory, fulfillment; synthetic data; YAML; ChromaDB; NetworkX; DuckDB; LangGraph; conditional ToT.",
      "End-to-end local demo answers the drop with evidence, caveats, confidence, owner actions."),
-    ("Phase II", "Expand into retail operations and service intelligence.",
+    ("Operations & service", "Expand into retail operations and service intelligence.",
      "Service contacts, fulfillment-service linkage, category drilldowns, checkout funnel, regional analysis.",
      "Connects service, fulfillment, category, funnel evidence without overstating causality."),
-    ("Phase III", "Expand into finance, vendor insights, and executive summaries.",
+    ("Finance & vendor", "Expand into finance, vendor insights, and executive summaries.",
      "Finance reconciliation, gross-to-net, vendor/category, returns/margin proxy, executive summaries.",
      "Produces finance-safe, executive-friendly summaries from evidence-backed findings."),
     ("Future production", "Move to governed enterprise deployment after the pattern is proven.",
@@ -213,20 +213,20 @@ MULTI_AGENT_INTRO = (
     "run concurrently). It is used only when it pays for itself."
 )
 
-# Specialized analyst team (analyst, domain, phase, governed driver / focus)
+# Specialized analyst team (analyst, domain, governed driver / focus)
 ANALYST_TEAM = [
-    ("Marketing Analyst", "marketing", "I", "campaign_mix — channel/campaign traffic mix & conversion"),
-    ("Merchandising Analyst", "merchandising", "I", "inventory_availability — stockout vs views"),
-    ("Fulfillment Analyst", "fulfillment", "I", "fulfillment_constraints — delays & option availability"),
-    ("Digital Analytics Analyst", "analytics", "I", "funnel_behavior — cart→purchase by category/device"),
-    ("Customer Service Analyst", "service", "II", "service_signal — contact spike by reason code"),
-    ("Finance Analyst", "finance", "III", "finance_caveat — gross-to-net reconciliation"),
-    ("Vendor / Category Analyst", "merchandising", "III", "vendor_insight — sales-weighted stockout by vendor"),
+    ("Marketing Analyst", "marketing", "campaign_mix — channel/campaign traffic mix & conversion"),
+    ("Merchandising Analyst", "merchandising", "inventory_availability — stockout vs views"),
+    ("Fulfillment Analyst", "fulfillment", "fulfillment_constraints — delays & option availability"),
+    ("Digital Analytics Analyst", "analytics", "funnel_behavior — cart→purchase by category/device"),
+    ("Customer Service Analyst", "service", "service_signal — contact spike by reason code"),
+    ("Finance Analyst", "finance", "finance_caveat — gross-to-net reconciliation"),
+    ("Vendor / Category Analyst", "merchandising", "vendor_insight — sales-weighted stockout by vendor"),
 ]
 
 # When to use / not use multiple agents (decision, rationale)
 MULTI_AGENT_WHEN = [
-    ("Use the team", "Question is cross-domain and the ToT gate confirms competing drivers; dispatch only the analysts in scope for the requested phase."),
+    ("Use the team", "Question is cross-domain and the ToT gate confirms competing drivers; dispatch the specialized analysts whose domain is relevant."),
     ("Use a single analyst", "Narrow, single-domain question — no team is formed; avoids coordination overhead."),
     ("Run agents in parallel", "Domain queries are independent and read-only, so they execute concurrently to cut wall-clock latency."),
     ("Keep the Critic central", "One Critic scores all analysts on the same rubric, so specialization never means inconsistent standards."),
@@ -241,22 +241,15 @@ MULTI_AGENT_TRADEOFFS = [
     ("Observability gap", "A coordination log records which agents ran, durations, parallel speedup, and failures; every agent call is an audit event."),
 ]
 
-# Phase team scoping (phase, analysts added, focus)
-PHASE_TEAM = [
-    ("Phase I", "Marketing, Merchandising, Fulfillment, Digital Analytics", "Conversion, campaign/channel mix, inventory availability, fulfillment, funnel."),
-    ("Phase II", "+ Customer Service", "Service-contact spikes linked to fulfillment/inventory; funnel & regional detail."),
-    ("Phase III", "+ Finance, + Vendor/Category, + Executive Summary", "Finance reconciliation, vendor/partner stockout impact, leadership summary."),
-]
-
 # ToT depth model (element, definition)
 TOT_DEPTH = [
     ("Thought", "A candidate driver hypothesis plus an evidence plan."),
     ("Node", "Reasoning state: metric, source versions, candidate driver, expected evidence, SQL template, score, caveats."),
     ("Branch", "Path from root question to a candidate driver and sub-driver investigation."),
     ("Depth 0", "Validated root question: metric, time window, source versions, query budget."),
-    ("Depth 1", "Primary driver branches: campaign mix, inventory, fulfillment, funnel (+service/finance by phase)."),
+    ("Depth 1", "Primary driver branches: campaign mix, inventory, fulfillment, funnel, service, finance, vendor."),
     ("Depth 2", "Sub-driver refinement: paid social quality, category stockout, delivery delay, etc."),
-    ("Branching factor", "Phase I usually 3-4 primary branches."),
+    ("Branching factor", "Usually 3-4 primary branches."),
     ("Depth limit", "Depth 2 for the MVP to avoid branch explosion on a laptop."),
 ]
 
@@ -288,7 +281,7 @@ CONFLICT_RULES = [
     ("Prior note suggests a repeated pattern", "Treat as context only, not evidence.", "Current DuckDB must confirm before it is a finding."),
 ]
 
-# Synthetic tables (table, grain, phase I role)
+# Synthetic tables (table, grain, role)
 SYNTH_TABLES = [
     ("fact_sessions", "session", "Traffic, channel, device, campaign, region; conversion denominator."),
     ("fact_events", "event", "Product views, cart adds, checkout starts, purchases (funnel)."),
@@ -296,8 +289,8 @@ SYNTH_TABLES = [
     ("fact_order_items", "order item", "Product/category sales and item-level drilldowns."),
     ("fact_inventory_daily", "product-location-day", "Stockout flag, available-online flag, inventory pressure."),
     ("fact_fulfillment", "order-fulfillment", "Promise/actual date, delay days, cancellations, fulfillment type."),
-    ("fact_customer_contacts", "contact", "Contact reason, channel, resolution, order link (Phase II)."),
-    ("fact_finance_daily", "date/channel/category", "Gross sales, net revenue, returns, tax, shipping (Phase III)."),
+    ("fact_customer_contacts", "contact", "Contact reason, channel, resolution, order link."),
+    ("fact_finance_daily", "date/channel/category", "Gross sales, net revenue, returns, tax, shipping."),
     ("dim_product", "product", "SKU, category, brand, price band, vendor_id, partner flag."),
     ("dim_category", "category", "Department, category hierarchy, owner."),
     ("dim_campaign", "campaign", "Campaign name, channel, date range, spend, audience, owner."),
@@ -310,8 +303,8 @@ SCENARIOS = [
     ("Inventory availability issue", "Selected categories: high product views, low available-online / high stockout.", "High traffic, low conversion, elevated stockout rate.", "Merchandising"),
     ("Fulfillment constraint", "Delivery delays or fewer options in selected regions.", "Higher delay_days, cancellations, lower option availability.", "Fulfillment Operations"),
     ("Funnel behavior issue", "View-to-cart or checkout-to-purchase drops for a category/device.", "Funnel tables show abandonment change by stage.", "Digital Analytics"),
-    ("Service signal (Phase II)", "Contacts rise after fulfillment/inventory issue.", "Contact reasons correlate to affected orders/regions.", "Customer Service"),
-    ("Finance caveat (Phase III)", "Net revenue differs from gross due to returns/tax/shipping.", "Finance daily table explains gross-to-net differences.", "Finance"),
+    ("Service signal", "Contacts rise after fulfillment/inventory issue.", "Contact reasons correlate to affected orders/regions.", "Customer Service"),
+    ("Finance caveat", "Net revenue differs from gross due to returns/tax/shipping.", "Finance daily table explains gross-to-net differences.", "Finance"),
 ]
 
 DEMO_QUESTIONS = [
@@ -383,7 +376,7 @@ AUDIT_SCHEMA = [
     ("user_visible_note", "Inventory path checked; evidence weak -> inconclusive.", "Plain-language UI trace."),
 ]
 
-# Implementation milestones (phase, deliverables, exit)
+# Implementation milestones (milestone, deliverables, exit)
 MILESTONES = [
     ("1. Project setup", "Repository, environment, Streamlit shell, local model notes.", "App starts locally and accepts a question."),
     ("2. Synthetic data", "DuckDB schema, generator, seeded anomalies, validation SQL.", "Expected demo signals appear in data."),
@@ -394,7 +387,7 @@ MILESTONES = [
     ("7. ToT beam search", "Branch generator, scoring, pruning, tie-breaker, stopping rule.", "Demo shows candidate branches and selection."),
     ("8. Guardrails & evidence gate", "SQL validator, source gate, conflict checks, stopping, labels.", "Unsafe/unsupported answers blocked or caveated."),
     ("9. Demo polish", "Streamlit tabs, response template, action log, screenshots, assets.", "MVP is presentation-ready and repeatable."),
-    ("10. Phase II/III backlog", "Service, funnel, finance, vendor, executive-summary placeholders.", "Future phases have a clear extension path."),
+    ("10. Operations/finance backlog", "Service, funnel, finance, vendor, executive-summary placeholders.", "Future capabilities have a clear extension path."),
 ]
 
 # Risks (risk, mitigation)
@@ -432,7 +425,7 @@ PROTOTYPE_STATUS = [
     ("NetworkX graph from YAML", "Built", "src/graph.py: metric/table/system/driver/owner + edge types; version+hash gate."),
     ("LangGraph workflow", "Built", "src/workflow.py: real StateGraph, 10 nodes, ReAct loop."),
     ("Conditional ToT beam search", "Built", "src/tot.py: width 2, depth 2, rubric, pruning, budget, governance pre-screen."),
-    ("Multi-agent team (all phases)", "Built", "src/agents.py: specialized analysts, parallel dispatch, coordination log, graceful degradation; Phase I/II/III scoping + executive summary."),
+    ("Multi-agent team", "Built", "src/agents.py: specialized analysts, parallel dispatch, coordination log, graceful degradation; full team + executive summary."),
     ("Guardrails (SQL/freshness/conflict/write)", "Built", "src/guardrails.py driven by guardrails.yaml."),
     ("Audit trail + action log", "Built", "src/audit.py: run_id, section-17.2 event schema, human-reviewed actions."),
     ("Multi-tab UI + 4 trace levels", "Built", "app.py: Answer/Evidence/Trust/ToT/Audit/Action tabs."),

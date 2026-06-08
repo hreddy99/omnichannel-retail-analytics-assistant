@@ -50,8 +50,8 @@ SECTIONS = [
              + "<ul>" + "".join(f"<li>{_esc(v)}</li>" for v in P.ENTERPRISE_VALUE) + "</ul>"),
     ("capabilities", "Agentic Capability Alignment",
      lambda: _table(["Capability", "How the assistant implements it", "What good looks like"], P.CAPABILITY_ALIGNMENT)),
-    ("roadmap", "Phase Roadmap",
-     lambda: _table(["Phase", "Objective", "Scope", "Success criteria"], P.PHASE_ROADMAP)),
+    ("roadmap", "Capability Roadmap",
+     lambda: _table(["Stage", "Objective", "Scope", "Success criteria"], P.PHASE_ROADMAP)),
     ("stack", "Free & Local Tool Stack",
      lambda: _table(["Tool", "Role", "Free / on PC?", "MVP notes"], P.TOOL_STACK)),
     ("arch", "Architecture",
@@ -64,8 +64,7 @@ SECTIONS = [
      lambda: _table(["Agent / role", "Purpose", "Primary tools", "MVP output"], P.AGENT_ROLES)),
     ("team", "Multi-Agent Team — Specialization, Parallelism & Trade-offs",
      lambda: f"<p>{_esc(P.MULTI_AGENT_INTRO)}</p>"
-             + _table(["Analyst", "Domain", "Phase", "Governed driver / focus"], P.ANALYST_TEAM)
-             + _table(["Phase", "Analysts added", "Focus"], P.PHASE_TEAM)
+             + _table(["Analyst", "Domain", "Governed driver / focus"], P.ANALYST_TEAM)
              + "<p class='note'><b>When we use multiple agents</b></p>"
              + _table(["Decision", "Rationale"], P.MULTI_AGENT_WHEN)
              + "<p class='note'><b>Trade-offs accepted &amp; mitigations</b></p>"
@@ -79,7 +78,7 @@ SECTIONS = [
     ("conflict", "Source Conflict & Priority Rules",
      lambda: _table(["Situation", "Decision rule", "User-facing behavior"], P.CONFLICT_RULES)),
     ("data", "Synthetic Data Plan",
-     lambda: _table(["Table", "Grain", "Phase I role"], P.SYNTH_TABLES)
+     lambda: _table(["Table", "Grain", "Role"], P.SYNTH_TABLES)
              + _table(["Seeded scenario", "Pattern", "Expected evidence", "Owner"], P.SCENARIOS)),
     ("questions", "MVP Demo Questions",
      lambda: "<ol>" + "".join(f"<li>{_esc(q)}</li>" for q in P.DEMO_QUESTIONS) + "</ol>"),
@@ -92,7 +91,7 @@ SECTIONS = [
     ("audit", "Audit Event Schema",
      lambda: _table(["Audit field", "Example", "Purpose"], P.AUDIT_SCHEMA)),
     ("milestones", "Implementation Milestones",
-     lambda: _table(["Phase / milestone", "Deliverables", "Exit criteria"], P.MILESTONES)),
+     lambda: _table(["Milestone", "Deliverables", "Exit criteria"], P.MILESTONES)),
     ("risks", "Risks & Mitigations",
      lambda: _table(["Risk", "Mitigation"], P.RISKS)),
     ("readiness", "Implementation-Readiness Checklist",

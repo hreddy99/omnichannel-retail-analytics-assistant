@@ -18,8 +18,8 @@ for its own sake:
 WHEN WE USE MULTIPLE AGENTS
   - Only when the question is cross-domain (the ToT gate confirms competing
     drivers). A narrow, single-domain question uses one analyst - no team.
-  - Only the agents in scope for the requested phase are dispatched
-    (specialization keeps the team small).
+  - The specialized analysts whose domain is relevant are dispatched
+    (specialization keeps each analyst focused).
 
 TRADE-OFFS WE ACCEPT (and how we mitigate them)
   - Coordination overhead: a thread pool + a fixed per-agent timeout bound it;
@@ -53,23 +53,19 @@ AGENT_NAMES = {
     "vendor_insight": "Vendor / Category Analyst",
 }
 
-# Phase scoping (Plan section 4 roadmap). Each phase ADDS specialized agents.
-PHASE_I = ["campaign_mix", "inventory_availability", "fulfillment_constraints", "funnel_behavior"]
-PHASE_AGENTS = {
-    1: PHASE_I,
-    2: PHASE_I + ["service_signal"],
-    3: PHASE_I + ["service_signal", "finance_caveat", "vendor_insight"],
-}
-PHASE_AGENTS["all"] = PHASE_AGENTS[3]
+# The full specialized analyst team. The app runs unified - the whole team is
+# dispatched every investigation; the Orchestrator/Critic decide what matters.
+ANALYSTS = ["campaign_mix", "inventory_availability", "fulfillment_constraints",
+            "funnel_behavior", "service_signal", "finance_caveat", "vendor_insight"]
 
 # Non-domain team members (represented in the workflow nodes), shown in the roster.
 SUPPORT_ROLES = [
-    ("Analytics Orchestrator", "Routes the team, sets phase scope, applies query budget and stopping."),
+    ("Analytics Orchestrator", "Routes the team, applies query budget and stopping."),
     ("Semantic Agent", "Retrieves certified definitions/templates from ChromaDB and validates vs YAML."),
     ("Graph Reasoning Agent", "Maps metric -> driver -> table -> owner via NetworkX."),
     ("Critic / Evaluator", "Scores each analyst's branch on the 0-14 rubric; prunes weak paths."),
     ("Synthesis Agent", "Ranks supported drivers and writes the grounded business answer."),
-    ("Executive Summary Agent", "Composes a leadership summary across phases (Phase III / all)."),
+    ("Executive Summary Agent", "Composes owner-routed recommended actions for leadership."),
 ]
 
 PER_AGENT_TIMEOUT_S = 12.0
@@ -82,7 +78,6 @@ class AgentResult:
     agent_name: str
     domain: str
     owner: str
-    phase: int
     finding: str = ""
     signal: float = 0.0
     sql: str = ""
@@ -95,17 +90,16 @@ class AgentResult:
 class DomainAgent:
     """A specialized analyst: one domain, one governed driver, one read-only query."""
 
-    def __init__(self, key: str, phase: int):
+    def __init__(self, key: str):
         drv = catalog.get_driver(key) or {}
         self.key = key
-        self.phase = phase
         self.name = AGENT_NAMES.get(key, key)
         self.domain = drv.get("domain", "")
         self.owner = drv.get("owner", "")
 
     def analyze(self, con, meta: dict) -> AgentResult:
         td, b0, b1 = meta["target_day"], meta["baseline_start"], meta["baseline_end"]
-        res = AgentResult(self.key, self.name, self.domain, self.owner, self.phase)
+        res = AgentResult(self.key, self.name, self.domain, self.owner)
         t0 = time.perf_counter()
         try:
             cur = con.cursor()  # thread-safe concurrent read off the same database
@@ -119,10 +113,9 @@ class DomainAgent:
         return res
 
 
-def agents_for_phase(phase) -> list[DomainAgent]:
-    keys = PHASE_AGENTS.get(phase, PHASE_AGENTS[1])
-    pnum = 3 if phase == "all" else phase
-    return [DomainAgent(k, pnum) for k in keys]
+def analyst_team() -> list[DomainAgent]:
+    """The full specialized analyst team (unified)."""
+    return [DomainAgent(k) for k in ANALYSTS]
 
 
 def dispatch(agents: list[DomainAgent], con, meta: dict,
@@ -138,7 +131,7 @@ def dispatch(agents: list[DomainAgent], con, meta: dict,
 
     def _wrapped(agent: DomainAgent) -> AgentResult:
         if inject_failure and agent.key == inject_failure:
-            r = AgentResult(agent.key, agent.name, agent.domain, agent.owner, agent.phase)
+            r = AgentResult(agent.key, agent.name, agent.domain, agent.owner)
             r.status = "error"; r.error = "Injected failure (demo)"
             r.finding = "Agent failed; excluded from synthesis."
             return r
@@ -151,7 +144,7 @@ def dispatch(agents: list[DomainAgent], con, meta: dict,
             try:
                 results.append(fut.result(timeout=PER_AGENT_TIMEOUT_S))
             except Exception as e:
-                r = AgentResult(a.key, a.name, a.domain, a.owner, a.phase)
+                r = AgentResult(a.key, a.name, a.domain, a.owner)
                 r.status = "timeout" if "Timeout" in type(e).__name__ else "error"
                 r.error = f"{type(e).__name__}: {e}"
                 r.finding = "Agent did not return in time; excluded from synthesis."

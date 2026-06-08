@@ -33,7 +33,7 @@ tables:
     allowed_joins: [fact_orders, dim_product]
     freshness: "T-1"
     owner: "Merchandising"
-    approved_use: "Category/product drilldowns (Phase II/III)."
+    approved_use: "Category/product drilldowns."
   fact_inventory_daily:
     grain: "one row per category/day"
     keys: [date, category_id]
@@ -57,7 +57,7 @@ tables:
     allowed_joins: [fact_orders]
     freshness: "T-1"
     owner: "Customer Service"
-    approved_use: "Phase II: service-contact spikes and issue linkage."
+    approved_use: "Service-contact spikes and issue linkage."
   fact_finance_daily:
     grain: "one row per date/channel/category"
     keys: [date, channel, category_id]
@@ -65,7 +65,7 @@ tables:
     allowed_joins: [dim_category]
     freshness: "T-1"
     owner: "Finance"
-    approved_use: "Phase III: gross-to-net reconciliation."
+    approved_use: "Gross-to-net reconciliation."
   dim_product:
     grain: "one row per product"
     keys: [product_id]

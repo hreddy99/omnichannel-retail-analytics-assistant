@@ -21,20 +21,19 @@ from .workflow import get_app
 __all__ = ["run_investigation", "run_investigation_stream", "BEAM_WIDTH", "QUERY_BUDGET"]
 
 
-def _setup(question, seed, use_index, phase, inject_failure):
+def _setup(question, seed, use_index, inject_failure):
     con = build_duckdb(seed)
     audit = AuditLog()
     state = {"question": question, "con": con, "g": graph.build_graph(),
              "meta": get_meta(seed), "audit": audit,
              "index": retrieval.get_index() if use_index else None,
-             "phase": phase, "inject_failure": inject_failure}
+             "inject_failure": inject_failure}
     return con, audit, state
 
 
-def _trace(result: dict, audit: AuditLog, question: str, phase) -> dict:
+def _trace(result: dict, audit: AuditLog, question: str) -> dict:
     return {
         "question": question,
-        "phase": phase,
         "steps": audit.steps,
         "retrieval": result.get("retrieval", []),
         "baseline": result.get("baseline", {}),
@@ -57,23 +56,22 @@ def _trace(result: dict, audit: AuditLog, question: str, phase) -> dict:
 
 
 def run_investigation(question: str, seed: int = 42, use_index: bool = True,
-                      phase="all", inject_failure: str | None = None) -> dict:
+                      inject_failure: str | None = None) -> dict:
     """Execute the full governed multi-agent workflow and return a structured trace.
 
-    The app runs unified: the full specialized analyst team is dispatched every
-    time (phase defaults to "all"); phases are an internal team-composition detail.
+    The app runs unified: the full specialized analyst team is dispatched every time.
     """
-    con, audit, state = _setup(question, seed, use_index, phase, inject_failure)
+    con, audit, state = _setup(question, seed, use_index, inject_failure)
     result = get_app().invoke(state)
     con.close()
-    return _trace(result, audit, question, phase)
+    return _trace(result, audit, question)
 
 
 def run_investigation_stream(question: str, seed: int = 42, use_index: bool = True,
-                             phase="all", inject_failure: str | None = None):
+                             inject_failure: str | None = None):
     """Generator yielding ('step', step_dict) as the workflow executes each node,
     then ('done', trace). Lets the UI show actual executing steps live."""
-    con, audit, state = _setup(question, seed, use_index, phase, inject_failure)
+    con, audit, state = _setup(question, seed, use_index, inject_failure)
     result: dict = {}
     seen = 0
     # stream_mode="values" yields the full state after each superstep; audit.steps
@@ -87,4 +85,4 @@ def run_investigation_stream(question: str, seed: int = 42, use_index: bool = Tr
         yield ("step", audit.steps[seen])
         seen += 1
     con.close()
-    yield ("done", _trace(result, audit, question, phase))
+    yield ("done", _trace(result, audit, question))

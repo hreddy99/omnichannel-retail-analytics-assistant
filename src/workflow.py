@@ -21,7 +21,6 @@ from .audit import AuditLog
 
 class WState(TypedDict, total=False):
     question: str
-    phase: Any                  # 1 | 2 | 3 | "all"
     inject_failure: str | None  # demo: force one agent to fail
     con: Any
     g: Any
@@ -50,6 +49,18 @@ def _step(state: WState, node: str, detail: str, ok: bool = True):
     # steps recorded on it survive (unlike plain state keys, which are only
     # committed when a node returns them).
     state["audit"].step(node, detail, ok)
+
+
+# Owner-routed recommended actions per driver (human-reviewed; no operational writes).
+RECOMMENDATIONS = {
+    "campaign_mix": "Rebalance paid-social spend and audit campaign targeting/creative quality.",
+    "inventory_availability": "Expedite replenishment and re-enable online availability for the affected category.",
+    "fulfillment_constraints": "Restore fulfillment options and delivery SLAs in the affected region.",
+    "funnel_behavior": "Audit the on-site checkout funnel for the affected segment.",
+    "service_signal": "Brief support on the contact spike and confirm the operational root cause.",
+    "finance_caveat": "Reconcile gross-to-net before reporting revenue impact.",
+    "vendor_insight": "Alert the category/vendor partner about the stockout impact.",
+}
 
 
 # --------------------------------------------------------------------------
@@ -159,11 +170,10 @@ def n_tot_gate(state: WState) -> dict:
 
 
 def n_dispatch(state: WState) -> dict:
-    """Orchestrator dispatches the specialized analyst team IN PARALLEL."""
+    """Orchestrator dispatches the full specialized analyst team IN PARALLEL."""
     a: AuditLog = state["audit"]
     con, meta = state["con"], state["meta"]
-    phase = state.get("phase", 1)
-    team = agents.agents_for_phase(phase)
+    team = agents.analyst_team()
     results, coord = agents.dispatch(team, con, meta, inject_failure=state.get("inject_failure"))
 
     for r in results:
@@ -178,9 +188,9 @@ def n_dispatch(state: WState) -> dict:
             user_visible_note=f"Dispatched {coord['n_agents']} analysts in parallel "
                               f"({coord['wall_ms']}ms wall vs {coord['sequential_ms']}ms sequential).")
     _step(state, "dispatch analyst team (parallel)",
-          "Phase %s: ran %d specialized analysts concurrently in %dms "
+          "Ran %d specialized analysts concurrently in %dms "
           "(%dms if sequential; %.1fx speedup); %d ok, %d failed." % (
-              phase, coord["n_agents"], coord["wall_ms"], coord["sequential_ms"],
+              coord["n_agents"], coord["wall_ms"], coord["sequential_ms"],
               coord["speedup"], coord["n_ok"], coord["n_failed"]))
     return {"agent_results": results, "coordination": coord,
             "queries_used": 1 + coord["n_ok"]}
@@ -259,28 +269,37 @@ def n_synthesize(state: WState) -> dict:
                 "finding": b.finding, "score": b.total} for b in beam]
     summary = llm.draft_summary(headline, drivers, guardrails.overall_confidence(len(likely)))
 
-    # action log (human-reviewed recommendations only)
-    for b in beam:
-        a.action(owner=b.owner, issue=b.label, evidence=b.finding,
-                 confidence=b.confidence, priority="high" if b.confidence == "likely driver" else "medium",
-                 next_step=f"Investigate {b.label.lower()} and confirm with owner before any action.")
+    # action log + executive summary: owner-routed, ACTIONABLE recommendations
+    # (human-reviewed only; no operational writes). Beam drivers are prioritized to
+    # "act now"; qualified-but-deferred contributors to "investigate next".
+    recos = []
+    for b, pri in [(x, "high") for x in beam] + [(x, "medium") for x in deferred]:
+        action = RECOMMENDATIONS.get(b.driver, "Investigate and confirm with the owner before acting.")
+        a.action(owner=b.owner, issue=b.label, evidence=b.finding, confidence=b.confidence,
+                 priority=pri, next_step=action)
+        recos.append({"owner": b.owner, "action": action, "priority": pri,
+                      "confidence": b.confidence, "rationale": b.finding})
 
-    # Executive Summary Agent: leadership-level synthesis across all analyst findings
-    lines = [f"Digital conversion {pct:+.0%} day-over-baseline ({bl['target']:.2%} vs {bl['baseline']:.2%})."]
-    for d in drivers:
-        lines.append(f"{d['label']} — {d['confidence']} → {d['owner']}.")
-    for c in deferred:
-        lines.append(f"{c.label} — possible contributor → {c.owner}.")
+    # Executive Summary Agent: leadership-level, action-first synthesis
+    bullets = [f"What changed: digital conversion {pct:+.0%} vs the prior-7-day baseline "
+               f"({bl['target']:.2%} vs {bl['baseline']:.2%})."]
+    for r in recos:
+        tag = "Act now" if r["priority"] == "high" else "Investigate next"
+        bullets.append(f"{tag} — **{r['owner']}**: {r['action']} (basis: {r['rationale']})")
+    if not recos:
+        bullets.append("No driver cleared the evidence threshold; recommend the listed next checks.")
     exec_summary = {
-        "title": "Executive summary",
-        "bullets": lines,
-        "note": "Composed only from validated evidence; guarded language; recommendations "
-                "are human-reviewed, no operational writes.",
+        "title": "Executive summary — recommended actions",
+        "bullets": bullets,
+        "recommendations": recos,
+        "note": "Owner-routed recommendations from validated evidence; guarded language; "
+                "human-reviewed only, no operational writes.",
     }
     a.event(workflow_node="executive_summary", decision_type="exec_summary_ready",
-            tool_name="Executive Summary Agent", output_summary="leadership summary composed",
-            user_visible_note="Executive summary composed across analyst findings.")
-    _step(state, "executive summary", "Composed a leadership summary across the analyst findings.")
+            tool_name="Executive Summary Agent",
+            output_summary=f"{len(recos)} owner-routed recommendations",
+            user_visible_note="Executive summary with recommended actions composed.")
+    _step(state, "executive summary", "Composed action-first recommendations routed to owners.")
 
     answer = {
         "headline": headline, "summary": summary,
