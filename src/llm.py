@@ -43,6 +43,27 @@ def mode() -> str:
     return probe()["mode"]
 
 
+def draft_answer(question: str, facts: str, confidence: str) -> str:
+    """Answer the user's QUESTION in 2 cautious sentences using only `facts`.
+    Uses Ollama if available (bounded by timeout + token cap), else returns the
+    deterministic facts string. This keeps the response tuned to what was asked."""
+    info = probe()
+    if info["available"]:
+        try:
+            import ollama
+            prompt = ("You are a retail analytics assistant. Answer the user's question in at most "
+                      "2 cautious, business-facing sentences, using ONLY the facts provided. Do not "
+                      "invent numbers. Address the question directly.\n"
+                      f"Question: {question}\nFacts: {facts}\nOverall confidence: {confidence}.")
+            resp = ollama.Client(timeout=REQUEST_TIMEOUT_S).chat(
+                model=info["model"], messages=[{"role": "user", "content": prompt}],
+                options={"num_predict": MAX_TOKENS})
+            return resp["message"]["content"].strip()
+        except Exception:
+            pass
+    return facts
+
+
 def draft_summary(headline: str, drivers: list[dict], confidence: str) -> str:
     """Draft the business-facing summary. Uses Ollama if available, else a
     deterministic template (identical structure either way)."""
