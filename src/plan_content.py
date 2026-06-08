@@ -1,12 +1,12 @@
 """
-Structured content from the DETAILED project plan
-("Omnichannel Retail Analytics Assistant - Detailed Project Plan Updated Through
-Capstone Checkpoint 4.1"). Shared by the Streamlit app and the standalone
-interactive HTML so both stay in sync from a single source.
+Structured product content for the Omnichannel Retail Analytics Assistant -
+a governed agentic analytics assistant for the modern data platform. Shared by
+the Streamlit app and the standalone interactive HTML so both stay in sync from
+a single source.
 """
 
 TITLE = "Omnichannel Retail Analytics Assistant"
-SUBTITLE = "Detailed Project Plan Updated Through Capstone Checkpoint 4.1"
+SUBTITLE = "Governed agentic analytics for the modern data platform"
 TAGLINE = "ReAct + RAG + Knowledge Graph + Conditional Tree-of-Thought Beam Search"
 
 FEASIBILITY = (
@@ -28,8 +28,8 @@ EXECUTIVE_SUMMARY = (
     "ChromaDB retrieves catalog context; NetworkX maps relationships; DuckDB "
     "produces evidence from synthetic data; guardrails enforce read-only SQL, "
     "freshness, source conflicts, evidence thresholds, and guarded language. "
-    "Checkpoint 4.1 adds a conditional Tree-of-Thought layer (bounded beam search) "
-    "activated only when multiple plausible driver paths compete."
+    "It adds a conditional Tree-of-Thought layer (bounded beam search) activated "
+    "only when multiple plausible driver paths compete."
 )
 
 BUSINESS_PROBLEM = (
@@ -58,8 +58,52 @@ BUSINESS_ROLES = [
      "Concise evidence-backed summary with caveats, confidence, and action owners."),
 ]
 
-# (concept, demonstration, success measure)
-CAPSTONE_FIT = [
+# Enterprise analytics & modern data platform alignment ----------------------
+ENTERPRISE_ALIGNMENT = (
+    "The assistant represents a practical enterprise analytics pattern for using "
+    "agentic AI on top of a governed modern data platform. In production it sits "
+    "above certified analytical data products and helps users investigate "
+    "performance questions without needing to know every source table, metric rule, "
+    "or operational-system caveat. It translates natural-language questions into "
+    "governed analytical steps - retrieve the certified metric definition, identify "
+    "approved sources, check freshness and grain, validate SQL, run read-only "
+    "analysis, and synthesize evidence into a business explanation - complementing "
+    "data warehouses, lakehouses, semantic models, and BI dashboards."
+)
+
+# Medallion architecture mapping (layer, role)
+MEDALLION = [
+    ("Bronze", "Raw data lands from operational systems (ecommerce clickstream, OMS, ERP inventory, fulfillment, campaign, finance, service), preserving source detail and traceability."),
+    ("Silver", "Cleaned, standardized, conformed analytical tables: sessions, events, orders, order items, product, category, inventory, fulfillment, campaign, service contacts, finance daily."),
+    ("Gold", "Business-ready metrics and data products: digital conversion, sales performance, inventory availability, fulfillment delay rate, campaign conversion, net revenue, contact trends."),
+]
+MEDALLION_NOTE = (
+    "The assistant primarily queries curated Silver and Gold data. The YAML semantic "
+    "catalog is the governance layer that defines which metrics are certified, which "
+    "tables are allowed, what grain is valid, how joins work, how fresh the data is, "
+    "and what caveats must appear in the final response."
+)
+
+# Relationship to surrounding OLTP systems (system, analytics role, assistant use)
+OLTP_RELATIONSHIP = [
+    ("Ecommerce platform", "Sessions, carts, checkout events, digital orders", "Analyze traffic, funnel behavior, and conversion"),
+    ("OMS", "Order status, cancellations, fulfillment type", "Explain order and conversion impacts"),
+    ("ERP / Inventory", "Product availability, store inventory, vendor data", "Investigate stockouts and availability issues"),
+    ("Fulfillment systems", "Promise dates, delivery delays, pickup availability", "Identify fulfillment-related conversion drivers"),
+    ("Campaign platforms", "Campaign traffic, spend, attribution", "Evaluate whether traffic converted below normal"),
+    ("CRM / Customer service", "Contact volume, reason codes, order issues", "Connect service spikes to operational issues"),
+    ("Finance systems", "Revenue, returns, tax, shipping, adjustments", "Reconcile ecommerce and financial reporting"),
+]
+
+ENTERPRISE_VALUE = [
+    "Reduces time spent manually tracing root causes across dashboards, source systems, and teams.",
+    "Improves trust by forcing answers to reference certified definitions, approved grains, evidence, caveats, freshness, and confidence.",
+    "Turns dashboards into guided investigations (e.g. 'compare by fulfillment type', 'drill into top categories').",
+    "Creates a repeatable pattern for governed AI over analytical data products without unsafe write access to operational systems.",
+]
+
+# Agentic capability alignment (capability, how the assistant implements it, what good looks like)
+CAPABILITY_ALIGNMENT = [
     ("Tool calling",
      "Calls semantic search, YAML validation, graph traversal, SQL validation, DuckDB queries, profiling, evidence scoring, and action-log functions.",
      "Debug trace shows tools called in logical order with outputs in the final answer."),
@@ -273,7 +317,7 @@ UI_SECTIONS = [
 TRACE_LEVELS = [
     ("Level 1: Business summary", "Business users and leaders", "Final explanation, ranked drivers, confidence, caveats, owner actions."),
     ("Level 2: Evidence summary", "Analysts and managers", "Evidence tables, current vs baseline, contribution, freshness notes."),
-    ("Level 3: Trust details", "Analysts, reviewers, instructor demo", "YAML definition, chunk titles, graph path, sync status, why ToT (not) triggered."),
+    ("Level 3: Trust details", "Analysts, reviewers, stakeholder demo", "YAML definition, chunk titles, graph path, sync status, why ToT (not) triggered."),
     ("Level 4: Technical audit", "Developer / evaluator", "LangGraph node trace, tool-call summaries, SQL validation, branch scores, pruning, budget."),
 ]
 

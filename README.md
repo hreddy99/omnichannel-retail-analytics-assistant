@@ -1,15 +1,19 @@
 # Omnichannel Retail Analytics Assistant
 
-CMU capstone project — *Detailed Project Plan Updated Through Checkpoint 4.1*
+*Governed agentic analytics for the modern data platform*
 (**ReAct + RAG + Knowledge Graph + Conditional Tree-of-Thought Beam Search**).
 
-A **governed agentic research assistant** (not a chatbot) that investigates retail
+A **governed agentic analytics assistant** (not a chatbot) that investigates retail
 performance questions — Phase I demo: *"Why did digital conversion drop yesterday
 vs the prior 7-day average?"* — by grounding every answer in a governed catalog and
 read-only query evidence before recommending action.
 
-This repository is both an **interactive companion to the project plan** and a
-**runnable prototype** of its architecture, using free, local, open-source tools.
+It represents a practical enterprise analytics pattern for agentic AI on top of a
+governed modern data platform: the assistant sits above certified analytical data
+products (curated Silver/Gold data) and turns natural-language questions into
+governed analytical steps. This repository is both an **interactive product
+overview** and a **runnable prototype** of its architecture, using free, local,
+open-source tools.
 
 ## What it does
 
@@ -70,7 +74,7 @@ python -m src.data_validation   # Plan section 14.4 checks
 
 | Page | Contents |
 |------|----------|
-| 🏠 Overview | Executive summary, business roles, capstone fit, prototype status |
+| 🏠 Overview | Executive summary, business roles, enterprise/medallion alignment, capability alignment, status |
 | ✅ Feasibility Review | Verdict, free/local stack, **implementation issues found & handled**, readiness checklist, risks |
 | 🏗️ Architecture | LangGraph flow, live NetworkX graph, YAML files, agent roles, conflict rules |
 | 🗺️ Step-by-Step Plan | Phase roadmap, 10 milestones with status, ToT model + rubric, tables, FR-01–FR-12 |

@@ -42,13 +42,19 @@ SECTIONS = [
     ("problem", "Business Problem & Users",
      lambda: f"<p>{_esc(P.BUSINESS_PROBLEM)}</p>"
              + _table(["Role", "Typical question", "Assistant value"], P.BUSINESS_ROLES)),
-    ("capstone", "Capstone Fit & Course Alignment",
-     lambda: _table(["Concept", "How it's demonstrated", "Success measure"], P.CAPSTONE_FIT)),
+    ("enterprise", "Enterprise Analytics & Modern Data Platform",
+     lambda: f"<p>{_esc(P.ENTERPRISE_ALIGNMENT)}</p>"
+             + _table(["Medallion layer", "Role"], P.MEDALLION)
+             + f'<p class="note">{_esc(P.MEDALLION_NOTE)}</p>'
+             + _table(["Source / OLTP system", "Enterprise analytics role", "Assistant use"], P.OLTP_RELATIONSHIP)
+             + "<ul>" + "".join(f"<li>{_esc(v)}</li>" for v in P.ENTERPRISE_VALUE) + "</ul>"),
+    ("capabilities", "Agentic Capability Alignment",
+     lambda: _table(["Capability", "How the assistant implements it", "What good looks like"], P.CAPABILITY_ALIGNMENT)),
     ("roadmap", "Phase Roadmap",
      lambda: _table(["Phase", "Objective", "Scope", "Success criteria"], P.PHASE_ROADMAP)),
     ("stack", "Free & Local Tool Stack",
      lambda: _table(["Tool", "Role", "Free / on PC?", "MVP notes"], P.TOOL_STACK)),
-    ("arch", "Updated Architecture",
+    ("arch", "Architecture",
      lambda: _table(["Layer", "Component", "Responsibility", "Control"], P.ARCH_LAYERS)),
     ("yaml", "Knowledge Layer — YAML Catalog Files",
      lambda: _table(["File", "Contents", "Used by"], P.YAML_FILES)),

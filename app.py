@@ -47,9 +47,18 @@ def page_overview():
     st.subheader("Business problem & intended users")
     st.write(P.BUSINESS_PROBLEM)
     _table(P.BUSINESS_ROLES, ["Business role", "Typical question", "Assistant value"])
-    st.subheader("Capstone fit & course alignment")
-    _table(P.CAPSTONE_FIT, ["Capstone concept", "How the project demonstrates it", "Success measure"])
-    st.subheader("Prototype status (this repository)")
+
+    st.subheader("Enterprise analytics & modern data platform")
+    st.write(P.ENTERPRISE_ALIGNMENT)
+    _table(P.MEDALLION, ["Medallion layer", "Role"])
+    st.caption(P.MEDALLION_NOTE)
+    st.markdown("**Enterprise value**")
+    for v in P.ENTERPRISE_VALUE:
+        st.markdown(f"- {v}")
+
+    st.subheader("Agentic capability alignment")
+    _table(P.CAPABILITY_ALIGNMENT, ["Capability", "How the assistant implements it", "What good looks like"])
+    st.subheader("Implementation status")
     status = pd.DataFrame(P.PROTOTYPE_STATUS, columns=["Component", "Status", "Notes"])
     color = {"Built": "background-color:#dcfce7", "Optional": "background-color:#e0e7ff"}
     st.dataframe(status.style.map(lambda s: color.get(s, ""), subset=["Status"]),
@@ -143,7 +152,7 @@ def _graph_figure():
 
 
 def page_architecture():
-    st.title("🏗️ Updated Architecture")
+    st.title("🏗️ Architecture")
     st.write("LangGraph is the central controller. Tools and knowledge layers do not act "
              "independently — retrieval, validation, graph traversal, ToT, SQL, and synthesis "
              "are explicit workflow nodes. YAML governs truth; the LLM is never a source of truth.")
@@ -151,6 +160,10 @@ def page_architecture():
     st.plotly_chart(_flow_figure(), width="stretch")
     st.subheader("Architecture layers")
     _table(P.ARCH_LAYERS, ["Layer", "Component", "Responsibility", "Implementation control"])
+    st.subheader("Relationship to surrounding OLTP systems")
+    st.caption("The assistant analyzes the governed analytical copy of this data and produces "
+               "human-reviewed recommendations — it never updates transactional systems.")
+    _table(P.OLTP_RELATIONSHIP, ["Source / OLTP system", "Enterprise analytics role", "Assistant use"])
     st.subheader("Knowledge graph generated from the YAML catalog (NetworkX)")
     st.caption(f"Live render of the catalog (v{catalog.version()}, hash {catalog.content_hash()}). "
                "metric → driver → table / system / owner.")
@@ -270,7 +283,7 @@ def _tab_evidence(t):
 
 
 def _tab_trust(t):
-    st.caption("Level 3 · Trust details — for analysts, reviewers, instructor demo")
+    st.caption("Level 3 · Trust details — for analysts, reviewers, stakeholder demo")
     a = t["answer"]
     st.markdown(f"**Selected YAML metric definition:** {a['definition']}")
     st.markdown(f"**Catalog version / hash:** v{t['catalog_version']} · `{t['catalog_hash']}`")
@@ -438,7 +451,7 @@ PAGES = {
 }
 
 st.sidebar.title("🛍️ Retail Analytics Assistant")
-st.sidebar.caption("Governed investigation workflow · Checkpoint 4.1")
+st.sidebar.caption("Governed agentic analytics · modern data platform")
 selection = st.sidebar.radio("Navigate", list(PAGES.keys()))
 st.sidebar.divider()
 st.sidebar.markdown(f"**Catalog:** v{catalog.version()}  \n`{catalog.content_hash()}`  \n\n"
