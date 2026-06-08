@@ -15,12 +15,14 @@ from typing import Any, TypedDict
 import pandas as pd
 from langgraph.graph import END, START, StateGraph
 
-from . import catalog, graph, guardrails, llm, tot
+from . import agents, catalog, graph, guardrails, llm, tot
 from .audit import AuditLog
 
 
 class WState(TypedDict, total=False):
     question: str
+    phase: Any                  # 1 | 2 | 3 | "all"
+    inject_failure: str | None  # demo: force one agent to fail
     con: Any
     g: Any
     meta: dict
@@ -30,6 +32,9 @@ class WState(TypedDict, total=False):
     retrieval: list
     baseline: dict
     tot_activated: bool
+    agent_results: list
+    coordination: dict
+    degraded: list
     branches: list
     beam: list
     deferred: list
@@ -153,56 +158,65 @@ def n_tot_gate(state: WState) -> dict:
     return {"tot_activated": competing}
 
 
-def n_beam(state: WState) -> dict:
+def n_dispatch(state: WState) -> dict:
+    """Orchestrator dispatches the specialized analyst team IN PARALLEL."""
     a: AuditLog = state["audit"]
-    con, g, meta = state["con"], state["g"], state["meta"]
-    td, b0, b1 = meta["target_day"], meta["baseline_start"], meta["baseline_end"]
+    con, meta = state["con"], state["meta"]
+    phase = state.get("phase", 1)
+    team = agents.agents_for_phase(phase)
+    results, coord = agents.dispatch(team, con, meta, inject_failure=state.get("inject_failure"))
+
+    for r in results:
+        a.event(workflow_node="domain_agent", decision_type="agent_analysis",
+                tool_name=f"{r.agent_name} (DuckDB)", input_summary=f"domain={r.domain}",
+                output_summary=(r.finding[:70] if r.status == "ok" else r.error),
+                score_or_confidence=f"signal={r.signal:+.2f}", status=r.status,
+                user_visible_note=f"{r.agent_name}: {r.finding[:80]}")
+    a.event(workflow_node="orchestrator", decision_type="team_dispatched", tool_name="ThreadPool",
+            output_summary=f"{coord['n_ok']}/{coord['n_agents']} ok; {coord['n_failed']} failed",
+            score_or_confidence=f"{coord['speedup']}x speedup",
+            user_visible_note=f"Dispatched {coord['n_agents']} analysts in parallel "
+                              f"({coord['wall_ms']}ms wall vs {coord['sequential_ms']}ms sequential).")
+    _step(state, "dispatch analyst team (parallel)",
+          "Phase %s: ran %d specialized analysts concurrently in %dms "
+          "(%dms if sequential; %.1fx speedup); %d ok, %d failed." % (
+              phase, coord["n_agents"], coord["wall_ms"], coord["sequential_ms"],
+              coord["speedup"], coord["n_ok"], coord["n_failed"]))
+    return {"agent_results": results, "coordination": coord,
+            "queries_used": 1 + coord["n_ok"]}
+
+
+def n_critic(state: WState) -> dict:
+    """Critic scores each analyst's finding, prunes the ungoverned hypothesis,
+    and the Orchestrator applies beam selection (width 2) + depth-2 refinement."""
+    a: AuditLog = state["audit"]
+    g = state["g"]
     fresh_ok = guardrails.check_freshness(catalog.version(), g.graph["catalog_version"],
                                           g.graph.get("source_hash"))[0]
-    qused = state["queries_used"]
 
     # governance pre-screen (Plan section 12)
     ung = tot.ungoverned_branch()
     tot.score_branch(ung, g, fresh_ok)
     ung.finding = ("No certified metric or approved table backs this; SQL validator "
                    "blocked the unapproved 'pricing' table. Pruned without spending budget.")
-    a.event(workflow_node="tot_score", decision_type="branch_pruned", tool_name="SQL validator",
-            input_summary="hypothesis=price_increase", output_summary="ungoverned; blocked",
-            score_or_confidence=f"{ung.total}/14", status="blocked",
-            user_visible_note="Ungoverned 'price increase' hypothesis pruned (no governed backing).")
     _step(state, "governance pre-screen", "Ungoverned 'price increase' hypothesis rejected "
-          "(no certified metric/table; SQL validator blocked it). No query spent.")
+          "(no certified metric/table; SQL validator blocked it).")
 
     branches = [ung]
-    for drv in tot.PRIMARY_DRIVERS:
-        if (qused - 1) >= tot.DRIVER_PATH_BUDGET:
-            break
-        b = tot.make_branch(drv)
-        sql, ev, sig, finding = tot.DRIVER_QUERY[drv](con, td, b0, b1)
-        b.sql, b.evidence, b.signal, b.finding = sql, ev, sig, finding
-        qused += 1
+    degraded = []
+    for r in state["agent_results"]:
+        if r.status != "ok":
+            degraded.append({"agent": r.agent_name, "domain": r.domain,
+                             "status": r.status, "error": r.error})
+            continue
+        b = tot.make_branch(r.key)
+        b.sql, b.evidence, b.signal, b.finding = r.sql, r.evidence, r.signal, r.finding
         tot.score_branch(b, g, fresh_ok)
-        a.event(workflow_node="tot_score", decision_type="branch_scored", tool_name="DuckDB+Critic",
-                input_summary=f"driver={drv}", output_summary=finding[:70],
+        a.event(workflow_node="critic", decision_type="branch_scored", tool_name="Critic/Evaluator",
+                input_summary=f"agent={r.agent_name}", output_summary=r.finding[:70],
                 score_or_confidence=f"{b.total}/14 ({b.confidence})",
                 user_visible_note=f"{b.label}: {b.confidence} (score {b.total}/14).")
         branches.append(b)
-
-    # targeted follow-up (Plan section 13) only if evidence weak
-    queried = [b for b in branches if b.evidence is not None]
-    strong = [b for b in queried if b.confidence == "likely driver"]
-    if not strong and qused < tot.QUERY_BUDGET:
-        b = tot.make_branch(tot.RESERVE_DRIVER)
-        sql, ev, sig, finding = tot.DRIVER_QUERY[tot.RESERVE_DRIVER](con, td, b0, b1)
-        b.sql, b.evidence, b.signal, b.finding = sql, ev, sig, finding
-        qused += 1
-        tot.score_branch(b, g, fresh_ok)
-        branches.append(b)
-        _step(state, "targeted follow-up (query %d/%d)" % (qused, tot.QUERY_BUDGET),
-              "Primary drivers inconclusive -> spent reserved query on funnel check.")
-    else:
-        _step(state, "follow-up check", "Strong primary evidence -> reserved follow-up NOT "
-              "spent (%d/%d queries used)." % (qused, tot.QUERY_BUDGET))
 
     branches.sort(key=lambda x: (x.total, abs(x.signal)), reverse=True)
     pruned = [b for b in branches if b.confidence == "pruned"]
@@ -211,14 +225,14 @@ def n_beam(state: WState) -> dict:
     deferred = qualified[tot.BEAM_WIDTH:]
     depth2 = [{"driver": b.driver, "sub_drivers": b.sub_drivers,
                "refined": f"Refine '{b.label}' into: {', '.join(b.sub_drivers)}."} for b in beam]
-    _step(state, "depth-1 beam search (width %d)" % tot.BEAM_WIDTH,
-          "Beam kept %s; deferred %s; pruned %s." % (
+    _step(state, "critic + beam select (width %d)" % tot.BEAM_WIDTH,
+          "Beam kept %s; deferred %s; pruned %s; degraded %d." % (
               ", ".join(b.driver for b in beam) or "none",
               ", ".join(b.driver for b in deferred) or "none",
-              ", ".join(b.driver for b in pruned) or "none"))
+              ", ".join(b.driver for b in pruned) or "none", len(degraded)))
     _step(state, "depth-2 refinement", "Refined surviving branches into sub-drivers for owner routing.")
     return {"branches": branches, "beam": beam, "deferred": deferred, "pruned": pruned,
-            "depth2": depth2, "queries_used": qused}
+            "depth2": depth2, "degraded": degraded}
 
 
 def n_evidence_gate(state: WState) -> dict:
@@ -251,6 +265,26 @@ def n_synthesize(state: WState) -> dict:
                  confidence=b.confidence, priority="high" if b.confidence == "likely driver" else "medium",
                  next_step=f"Investigate {b.label.lower()} and confirm with owner before any action.")
 
+    # Executive Summary Agent (Phase III / all): leadership-level synthesis across phases
+    phase = state.get("phase", 1)
+    exec_summary = None
+    if phase == 3 or phase == "all":
+        lines = [f"Digital conversion {pct:+.0%} day-over-baseline ({bl['target']:.2%} vs {bl['baseline']:.2%})."]
+        for d in drivers:
+            lines.append(f"{d['label']} — {d['confidence']} → {d['owner']}.")
+        for c in [b for b in deferred]:
+            lines.append(f"{c.label} — possible contributor → {c.owner}.")
+        exec_summary = {
+            "title": "Executive summary (Phase III)",
+            "bullets": lines,
+            "note": "Composed only from validated evidence packages; guarded language; "
+                    "recommendations are human-reviewed, no operational writes.",
+        }
+        a.event(workflow_node="executive_summary", decision_type="exec_summary_ready",
+                tool_name="Executive Summary Agent", output_summary="leadership summary composed",
+                user_visible_note="Executive summary composed across phases.")
+        _step(state, "executive summary (Phase III)", "Composed a leadership summary across the phase findings.")
+
     answer = {
         "headline": headline, "summary": summary,
         "definition": catalog.get_metric("digital_conversion_rate")["definition"].strip(),
@@ -258,6 +292,7 @@ def n_synthesize(state: WState) -> dict:
         "contributors": [{"label": b.label, "confidence": "possible contributor (outside beam)",
                           "owner": b.owner, "finding": b.finding, "score": b.total} for b in deferred],
         "pruned": [{"label": b.label, "reason": b.finding, "score": b.total} for b in pruned],
+        "degraded": state.get("degraded", []),
         "recommendation": ("Evidence points to multiple compounding drivers rather than a single "
                            "cause. Route each likely driver to its owner for a human-reviewed check "
                            "before any action."),
@@ -266,6 +301,7 @@ def n_synthesize(state: WState) -> dict:
                     "Causality is labeled (likely driver / possible contributor); not proven."],
         "confidence": guardrails.overall_confidence(len(likely)),
         "llm_mode": llm.mode(),
+        "exec_summary": exec_summary,
     }
     a.event(workflow_node="synthesize", decision_type="final_answer_ready", tool_name="Synthesis+LLM",
             output_summary=headline[:70], score_or_confidence=answer["confidence"],
@@ -281,8 +317,8 @@ def build_workflow():
     sg = StateGraph(WState)
     nodes = [("classify", n_classify), ("sync_gate", n_sync_gate), ("retrieve", n_retrieve),
              ("validate", n_validate), ("relate", n_relate), ("baseline", n_baseline),
-             ("tot_gate", n_tot_gate), ("beam", n_beam), ("evidence_gate", n_evidence_gate),
-             ("synthesize", n_synthesize)]
+             ("tot_gate", n_tot_gate), ("dispatch", n_dispatch), ("critic", n_critic),
+             ("evidence_gate", n_evidence_gate), ("synthesize", n_synthesize)]
     for name, fn in nodes:
         sg.add_node(name, fn)
     sg.add_edge(START, "classify")

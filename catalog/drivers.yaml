@@ -43,7 +43,7 @@ drivers:
     label: "Service contact spike (Phase II)"
     domain: service
     owner: "Customer Service"
-    metric: null
+    metric: service_contact_rate
     tables: [fact_customer_contacts]
     system: "Service Platform"
     sub_drivers: [delivery_complaints, cancellation_contacts]
@@ -52,11 +52,20 @@ drivers:
     label: "Finance caveat (Phase III)"
     domain: finance
     owner: "Finance"
-    metric: null
+    metric: net_revenue_ratio
     tables: [fact_finance_daily]
     system: "Finance Reporting"
     sub_drivers: [returns_timing, tax_shipping_adjustments]
     hypothesis: "Net revenue differs from gross sales due to returns/tax/shipping."
+  vendor_insight:
+    label: "Vendor / category partner impact (Phase III)"
+    domain: merchandising
+    owner: "Merchandising"
+    metric: vendor_stockout_impact
+    tables: [fact_inventory_daily, dim_product, fact_order_items]
+    system: "ERP Inventory"
+    sub_drivers: [vendor_stockout, category_partner_alert]
+    hypothesis: "A vendor's stockouts in a high-sales category should trigger a partner alert."
 
 # Enterprise systems shown for context only (no real connections - Plan section 9).
 systems:

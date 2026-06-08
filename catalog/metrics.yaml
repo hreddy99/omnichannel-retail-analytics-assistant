@@ -71,3 +71,41 @@ metrics:
     freshness_level: "T-1"
     caveats: ["Funnel drop isolates on-site behavior from traffic-mix effects."]
     example_questions: ["Were customers abandoning after product view or cart?"]
+
+  # --- Phase II metrics ---
+  service_contact_rate:
+    label: "Customer Contact Rate"
+    domain: service
+    owner: "Customer Service"
+    definition: "Customer service contacts per day, by reason code; spikes after operational issues."
+    formula: "count(contacts) by reason_code / day"
+    grain: day
+    approved_tables: [fact_customer_contacts]
+    freshness_level: "T-1"
+    caveats: ["Contact spikes follow root causes; treat as a corroborating signal, not a cause."]
+    example_questions: ["Did delivery delays increase customer contacts?"]
+
+  # --- Phase III metrics ---
+  net_revenue_ratio:
+    label: "Net-to-Gross Revenue Ratio"
+    domain: finance
+    owner: "Finance"
+    definition: "Net revenue divided by gross sales for a day; explains gross-to-net differences."
+    formula: "net_revenue / gross_sales"
+    grain: day
+    approved_tables: [fact_finance_daily]
+    freshness_level: "T-1"
+    caveats: ["Finance and operational totals differ by returns, tax, shipping, timing, adjustments."]
+    example_questions: ["Why does ecommerce sales not match finance revenue?"]
+
+  vendor_stockout_impact:
+    label: "Vendor Stockout Impact"
+    domain: merchandising
+    owner: "Merchandising"
+    definition: "Stockout pressure attributed to a vendor/category, weighted by sales exposure."
+    formula: "stockout_rate weighted by category sales"
+    grain: day
+    approved_tables: [fact_inventory_daily, dim_product, fact_order_items]
+    freshness_level: "T-1"
+    caveats: ["Vendor attribution is directional; confirm with the category partner before action."]
+    example_questions: ["Which vendor or category partner should be alerted about stockout impact?"]

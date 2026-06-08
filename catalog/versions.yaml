@@ -3,8 +3,8 @@
 # Per-file content_hash is computed at load time by src/catalog.py and compared
 # against retrieval/graph metadata; mismatch -> refresh/rebuild or block.
 section_id: versions
-catalog_version: "4.1.0"
-last_updated: "2026-06-07"
+catalog_version: "4.2.0"
+last_updated: "2026-06-08"
 approved_for_mvp: true
 files:
   - metrics.yaml

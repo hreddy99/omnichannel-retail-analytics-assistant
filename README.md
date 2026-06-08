@@ -19,12 +19,35 @@ open-source tools.
 
 LangGraph controls a ReAct-style loop: **classify → catalog sync gate → retrieve
 (ChromaDB) → validate (YAML) → relate (NetworkX) → baseline (DuckDB) → ToT gate →
-beam search → evidence gate → synthesize**. The conditional Tree-of-Thought layer
-(bounded beam search, width 2, depth 2) activates only when multiple driver paths
-compete; it scores each branch on a 0–14 rubric, prunes weak paths, and keeps the
-top two. Guardrails enforce read-only SQL, freshness/version sync, source-conflict
-priority (YAML wins), and write refusal. Every step is recorded to an append-only
-audit trail, and findings become **human-reviewed recommendations** — never writes.
+dispatch multi-agent team (parallel) → critic + beam → evidence gate → synthesize**.
+The conditional Tree-of-Thought layer (bounded beam search, width 2, depth 2)
+activates only when multiple driver paths compete; the Critic scores each branch on
+a 0–14 rubric, prunes weak paths, and keeps the top two. Guardrails enforce
+read-only SQL, freshness/version sync, source-conflict priority (YAML wins), and
+write refusal. Every step is recorded to an append-only audit trail, and findings
+become **human-reviewed recommendations** — never writes.
+
+### Multi-agent team (all phases)
+
+The domain investigations are run by a **team of specialized AI agents** dispatched
+**in parallel** by an Orchestrator — a deliberate design (see
+[`docs/multi_agent_design.md`](docs/multi_agent_design.md)):
+
+- **Specialization** — one analyst per domain (Marketing, Merchandising,
+  Fulfillment, Digital Analytics; **Phase II** adds Customer Service; **Phase III**
+  adds Finance + Vendor/Category + an Executive Summary agent), each owning its
+  tables, certified metric, and guardrails.
+- **Parallelism** — independent read-only queries run concurrently (bounded thread
+  pool); the UI reports the measured wall-clock vs. sequential time and speedup.
+- **Trade-offs handled** — coordination overhead (bounded pool + per-agent
+  timeout), complexity (one shared agent contract + governed catalog), and new
+  failure modes (each agent isolated; a failure degrades to an excluded result and
+  the team continues). The Live Demo's "Simulate an agent failure" control shows
+  this graceful degradation live.
+
+Select **Phase I / II / III** in the Live Demo to scope which analysts are
+dispatched; the **Multi-agent team** tab shows the roster, parallel timeline,
+per-analyst findings, coordination metrics, and the design trade-offs.
 
 A standout governance behavior: the ToT layer also proposes an *ungoverned*
 hypothesis ("maybe prices rose?"). With no certified metric or approved table behind
@@ -124,7 +147,8 @@ src/
   retrieval.py         ChromaDB + sentence-transformers (+ fallbacks) + sync gate
   graph.py             NetworkX graph from YAML (version + hash gated)
   guardrails.py        SQL safety / freshness / conflict / write refusal
-  tot.py               Conditional ToT beam search (rubric, pruning, budget)
+  agents.py            Multi-agent analyst team: specialized agents + parallel dispatch
+  tot.py               Per-domain evidence queries + ToT beam-search scoring rubric
   workflow.py          LangGraph StateGraph controller (10 nodes)
   llm.py               Ollama wrapper with deterministic fallback
   audit.py             Append-only audit trail + action log (section 17.2)

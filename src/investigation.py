@@ -16,25 +16,34 @@ from .workflow import get_app
 __all__ = ["run_investigation", "BEAM_WIDTH", "QUERY_BUDGET"]
 
 
-def run_investigation(question: str, seed: int = 42, use_index: bool = True) -> dict:
-    """Execute the full governed workflow and return a structured trace."""
+def run_investigation(question: str, seed: int = 42, use_index: bool = True,
+                      phase=1, inject_failure: str | None = None) -> dict:
+    """Execute the full governed multi-agent workflow and return a structured trace.
+
+    phase: 1 | 2 | 3 | "all" - scopes which specialized analysts the team dispatches.
+    inject_failure: optional agent key forced to fail (demonstrates graceful degradation).
+    """
     con = build_duckdb(seed)
     g = graph.build_graph()
     meta = get_meta(seed)
     audit = AuditLog()
     index = retrieval.get_index() if use_index else None
 
-    state = {"question": question, "con": con, "g": g, "meta": meta,
-             "audit": audit, "index": index}
+    state = {"question": question, "con": con, "g": g, "meta": meta, "audit": audit,
+             "index": index, "phase": phase, "inject_failure": inject_failure}
     result = get_app().invoke(state)
     con.close()
 
     return {
         "question": question,
+        "phase": phase,
         "steps": audit.steps,
         "retrieval": result.get("retrieval", []),
         "baseline": result.get("baseline", {}),
         "tot_activated": result.get("tot_activated", False),
+        "agent_results": result.get("agent_results", []),
+        "coordination": result.get("coordination", {}),
+        "degraded": result.get("degraded", []),
         "depth1": result.get("branches", []),
         "beam": result.get("beam", []),
         "deferred": result.get("deferred", []),

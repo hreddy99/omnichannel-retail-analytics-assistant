@@ -180,6 +180,20 @@ def page_architecture():
         st.subheader("Source-conflict & priority rules")
         _table(P.CONFLICT_RULES, ["Situation", "Decision rule", "User-facing behavior"])
 
+    st.subheader("Multi-agent team — specialization, parallelism & deliberate trade-offs")
+    st.write(P.MULTI_AGENT_INTRO)
+    mc1, mc2 = st.columns(2)
+    with mc1:
+        st.markdown("**Specialized analyst team**")
+        _table(P.ANALYST_TEAM, ["Analyst", "Domain", "Phase", "Governed driver / focus"])
+        st.markdown("**Phase scoping**")
+        _table(P.PHASE_TEAM, ["Phase", "Analysts", "Focus"])
+    with mc2:
+        st.markdown("**When we use multiple agents (and when we don't)**")
+        _table(P.MULTI_AGENT_WHEN, ["Decision", "Rationale"])
+        st.markdown("**Trade-offs accepted & mitigations**")
+        _table(P.MULTI_AGENT_TRADEOFFS, ["Trade-off", "Mitigation"])
+
 
 # ==========================================================================
 # PAGE: Step-by-Step Plan
@@ -258,6 +272,12 @@ def _tab_business(t):
         for p in a["pruned"]:
             st.markdown(f"- ~~{p['label']}~~ (score {p['score']}/14) — {p['reason']}")
     st.info("**Recommendation:** " + a["recommendation"])
+    es = a.get("exec_summary")
+    if es:
+        st.markdown(f"#### {es['title']}")
+        for line in es["bullets"]:
+            st.markdown(f"- {line}")
+        st.caption(es["note"])
 
 
 def _tab_evidence(t):
@@ -366,38 +386,94 @@ def _tab_actions(t):
                "ERP, OMS, CRM, pricing, inventory, campaign, fulfillment, service, or finance systems.")
 
 
+def _tab_team(t):
+    st.caption("Multi-agent team — specialized analysts dispatched in parallel by the Orchestrator")
+    coord = t.get("coordination", {})
+    if not coord:
+        st.info("No team dispatched for this run.")
+        return
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Analysts", coord.get("n_agents", 0))
+    c2.metric("Succeeded", coord.get("n_ok", 0))
+    c3.metric("Failed", coord.get("n_failed", 0))
+    c4.metric("Parallel speedup", f"{coord.get('speedup', 1)}×")
+    st.caption(f"Wall-clock {coord.get('wall_ms', 0)} ms in parallel vs "
+               f"{coord.get('sequential_ms', 0)} ms if run one-by-one.")
+    # parallel execution timeline (per-agent durations)
+    tl = coord.get("timeline", [])
+    if tl:
+        fig = go.Figure(go.Bar(
+            x=[r["elapsed_ms"] for r in tl], y=[r["agent"] for r in tl], orientation="h",
+            marker_color=["#16a34a" if r["status"] == "ok" else "#dc2626" for r in tl],
+            text=[r["status"] for r in tl], textposition="auto"))
+        fig.update_layout(height=40 + 32 * len(tl), margin=dict(l=10, r=10, t=24, b=10),
+                          plot_bgcolor="white", title="Per-analyst query time (ms) — color = status",
+                          xaxis_title="ms")
+        st.plotly_chart(fig, width="stretch")
+    st.markdown("**Analyst findings:**")
+    for r in t.get("agent_results", []):
+        icon = "✅" if r.status == "ok" else "⚠️"
+        st.markdown(f"{icon} **{r.agent_name}** ({r.domain}, {r.elapsed_ms} ms) — "
+                    f"{r.finding if r.status == 'ok' else r.error}")
+    if t.get("degraded"):
+        st.warning("Degraded analysts (isolated failure; team continued, Critic excluded them): "
+                   + ", ".join(f"{d['agent']} ({d['status']})" for d in t["degraded"]))
+    with st.expander("Why multi-agent here — design decisions & trade-offs"):
+        st.write(P.MULTI_AGENT_INTRO)
+        _table(P.MULTI_AGENT_WHEN, ["Decision", "Rationale"])
+        _table(P.MULTI_AGENT_TRADEOFFS, ["Trade-off accepted", "Mitigation"])
+
+
 def page_demo():
-    st.title("🔬 Live Demo — Governed Investigation")
-    st.write("Runs the real LangGraph pipeline on Faker-generated synthetic data, then exposes "
-             "the four trace levels from the plan (business → evidence → trust → technical audit).")
+    st.title("🔬 Live Demo — Governed Multi-Agent Investigation")
+    st.write("Runs the real LangGraph pipeline on Faker-generated synthetic data. A team of "
+             "specialized analysts is dispatched in parallel; results are exposed through the "
+             "plan's four trace levels plus a multi-agent team view.")
     probe = llm.probe()
     st.caption(f"LLM: {probe['detail']}")
+
     options = P.DEMO_QUESTIONS + ["✍️ Custom question…"]
     choice = st.selectbox("Pick a demo question", options, index=0)
     question = st.text_input("Question", value="" if choice.startswith("✍️") else choice)
+    col1, col2 = st.columns(2)
+    phase_label = col1.selectbox(
+        "Phase scope (which analysts are dispatched)",
+        ["Phase I (conversion drivers)", "Phase II (+ customer service)",
+         "Phase III (+ finance, vendor, executive summary)"], index=0)
+    phase = {"Phase I (conversion drivers)": 1, "Phase II (+ customer service)": 2,
+             "Phase III (+ finance, vendor, executive summary)": 3}[phase_label]
+    fail_opts = {"(none)": None, "Marketing Analyst": "campaign_mix",
+                 "Merchandising Analyst": "inventory_availability",
+                 "Fulfillment Analyst": "fulfillment_constraints",
+                 "Customer Service Analyst": "service_signal"}
+    fail_label = col2.selectbox("Simulate an agent failure (demonstrates graceful degradation)",
+                                list(fail_opts), index=0)
+
     if not st.button("Run investigation", type="primary"):
         st.caption("Tip: try *“update the paid_social budget”* to see the read-only guardrail refuse.")
         return
     if not question.strip():
         st.warning("Enter a question first.")
         return
-    with st.spinner("Investigating…"):
-        t = run_investigation(question)
+    with st.spinner("Investigating with the analyst team…"):
+        t = run_investigation(question, phase=phase, inject_failure=fail_opts[fail_label])
     if t.get("refusal"):
         st.error("🛡️ **Guardrail (read-only):** " + t["refusal"])
-    tabs = st.tabs(["💬 Business answer", "📊 Evidence", "🔎 Trust details",
+    tabs = st.tabs(["💬 Business answer", "👥 Multi-agent team", "📊 Evidence", "🔎 Trust details",
                     "🌳 ToT trace", "🧭 Technical audit", "📋 Action log"])
     with tabs[0]:
         _tab_business(t)
     with tabs[1]:
-        _tab_evidence(t)
+        _tab_team(t)
     with tabs[2]:
-        _tab_trust(t)
+        _tab_evidence(t)
     with tabs[3]:
-        _tab_tot(t)
+        _tab_trust(t)
     with tabs[4]:
-        _tab_audit(t)
+        _tab_tot(t)
     with tabs[5]:
+        _tab_audit(t)
+    with tabs[6]:
         _tab_actions(t)
 
 

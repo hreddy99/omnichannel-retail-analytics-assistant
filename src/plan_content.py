@@ -202,6 +202,52 @@ AGENT_ROLES = [
     ("Synthesis Agent", "Ranks supported drivers, writes final response.", "Result summaries, confidence rules.", "Definition, findings, caveats, owners."),
 ]
 
+# ---------------------------------------------------------------------------
+# Multi-agent system - deliberate design decisions
+# ---------------------------------------------------------------------------
+MULTI_AGENT_INTRO = (
+    "The domain investigations are run by a TEAM of specialized AI agents that "
+    "collaborate under an Orchestrator. Multi-agent design is a deliberate choice: "
+    "it unlocks capability through specialization (each analyst owns one domain, its "
+    "tables, metric, and guardrails) and parallelism (independent read-only queries "
+    "run concurrently). It is used only when it pays for itself."
+)
+
+# Specialized analyst team (analyst, domain, phase, governed driver / focus)
+ANALYST_TEAM = [
+    ("Marketing Analyst", "marketing", "I", "campaign_mix — channel/campaign traffic mix & conversion"),
+    ("Merchandising Analyst", "merchandising", "I", "inventory_availability — stockout vs views"),
+    ("Fulfillment Analyst", "fulfillment", "I", "fulfillment_constraints — delays & option availability"),
+    ("Digital Analytics Analyst", "analytics", "I", "funnel_behavior — cart→purchase by category/device"),
+    ("Customer Service Analyst", "service", "II", "service_signal — contact spike by reason code"),
+    ("Finance Analyst", "finance", "III", "finance_caveat — gross-to-net reconciliation"),
+    ("Vendor / Category Analyst", "merchandising", "III", "vendor_insight — sales-weighted stockout by vendor"),
+]
+
+# When to use / not use multiple agents (decision, rationale)
+MULTI_AGENT_WHEN = [
+    ("Use the team", "Question is cross-domain and the ToT gate confirms competing drivers; dispatch only the analysts in scope for the requested phase."),
+    ("Use a single analyst", "Narrow, single-domain question — no team is formed; avoids coordination overhead."),
+    ("Run agents in parallel", "Domain queries are independent and read-only, so they execute concurrently to cut wall-clock latency."),
+    ("Keep the Critic central", "One Critic scores all analysts on the same rubric, so specialization never means inconsistent standards."),
+]
+
+# Trade-offs accepted and mitigations (trade-off, mitigation)
+MULTI_AGENT_TRADEOFFS = [
+    ("Coordination overhead", "Bounded thread pool + fixed per-agent timeout; each agent makes exactly one read-only query."),
+    ("Added complexity", "All agents share one contract (DomainAgent.analyze → AgentResult) and one governed catalog; behavior stays uniform and inspectable."),
+    ("New failure modes (slow/failing/disagreeing agents)", "Each agent is isolated (own DuckDB cursor, try/except, timeout); a failure degrades to an excluded result; the Critic and source-priority rules resolve disagreement (DuckDB evidence + YAML win)."),
+    ("Non-determinism from parallelism", "The Critic re-sorts results deterministically (score, then evidence strength), so output is stable regardless of completion order."),
+    ("Observability gap", "A coordination log records which agents ran, durations, parallel speedup, and failures; every agent call is an audit event."),
+]
+
+# Phase team scoping (phase, analysts added, focus)
+PHASE_TEAM = [
+    ("Phase I", "Marketing, Merchandising, Fulfillment, Digital Analytics", "Conversion, campaign/channel mix, inventory availability, fulfillment, funnel."),
+    ("Phase II", "+ Customer Service", "Service-contact spikes linked to fulfillment/inventory; funnel & regional detail."),
+    ("Phase III", "+ Finance, + Vendor/Category, + Executive Summary", "Finance reconciliation, vendor/partner stockout impact, leadership summary."),
+]
+
 # ToT depth model (element, definition)
 TOT_DEPTH = [
     ("Thought", "A candidate driver hypothesis plus an evidence plan."),
@@ -386,6 +432,7 @@ PROTOTYPE_STATUS = [
     ("NetworkX graph from YAML", "Built", "src/graph.py: metric/table/system/driver/owner + edge types; version+hash gate."),
     ("LangGraph workflow", "Built", "src/workflow.py: real StateGraph, 10 nodes, ReAct loop."),
     ("Conditional ToT beam search", "Built", "src/tot.py: width 2, depth 2, rubric, pruning, budget, governance pre-screen."),
+    ("Multi-agent team (all phases)", "Built", "src/agents.py: specialized analysts, parallel dispatch, coordination log, graceful degradation; Phase I/II/III scoping + executive summary."),
     ("Guardrails (SQL/freshness/conflict/write)", "Built", "src/guardrails.py driven by guardrails.yaml."),
     ("Audit trail + action log", "Built", "src/audit.py: run_id, section-17.2 event schema, human-reviewed actions."),
     ("Multi-tab UI + 4 trace levels", "Built", "app.py: Answer/Evidence/Trust/ToT/Audit/Action tabs."),

@@ -127,9 +127,72 @@ def q_funnel(con, td, b0, b1):
     return sql, ev, excess, finding
 
 
+def q_service(con, td, b0, b1):
+    """Phase II: customer-contact spike, by reason code, vs baseline."""
+    sql = f"""
+    SELECT reason_code,
+           sum(CASE WHEN date=DATE '{td}' THEN 1 ELSE 0 END) AS contacts_target,
+           sum(CASE WHEN date BETWEEN DATE '{b0}' AND DATE '{b1}' THEN 1 ELSE 0 END)/7.0 AS contacts_base
+    FROM fact_customer_contacts GROUP BY reason_code ORDER BY contacts_target DESC"""
+    ev = con.execute(sql).df()
+    tot_t = float(ev.contacts_target.sum()); tot_b = float(ev.contacts_base.sum()) or 1.0
+    rel = (tot_t - tot_b) / tot_b
+    top = ev.iloc[0]
+    finding = (f"customer contacts rose {tot_b:.0f}->{tot_t:.0f}/day ({rel:+.0%}); top reason "
+               f"'{top.reason_code}' - corroborates an operational issue.")
+    return sql, ev, rel, finding
+
+
+def q_finance(con, td, b0, b1):
+    """Phase III: gross-to-net reconciliation caveat."""
+    sql = f"""
+    SELECT sum(CASE WHEN date=DATE '{td}' THEN gross_sales ELSE 0 END) AS gross_t,
+           sum(CASE WHEN date=DATE '{td}' THEN net_revenue ELSE 0 END) AS net_t,
+           sum(CASE WHEN date=DATE '{td}' THEN returns ELSE 0 END) AS returns_t,
+           avg(CASE WHEN date BETWEEN DATE '{b0}' AND DATE '{b1}'
+                    THEN returns/nullif(gross_sales,0) END) AS return_rate_base,
+           sum(CASE WHEN date=DATE '{td}' THEN returns ELSE 0 END)
+             / nullif(sum(CASE WHEN date=DATE '{td}' THEN gross_sales ELSE 0 END),0) AS return_rate_t
+    FROM fact_finance_daily"""
+    ev = con.execute(sql).df()
+    r = ev.iloc[0]
+    gap = float((r.gross_t - r.net_t) / r.gross_t) if r.gross_t else 0.0
+    rel = float((r.return_rate_t - r.return_rate_base) / r.return_rate_base) if r.return_rate_base else 0.0
+    finding = (f"net revenue is {gap:.0%} off gross (returns/tax/shipping/adjustments); "
+               f"return rate {r.return_rate_t:.1%} vs {r.return_rate_base:.1%} baseline. "
+               f"Reconciliation caveat - not an operational conversion cause.")
+    return sql, ev, rel, finding
+
+
+def q_vendor(con, td, b0, b1):
+    """Phase III: vendor/category stockout impact weighted by sales exposure."""
+    sql = f"""
+    WITH cat_sales AS (
+      SELECT category_id, sum(item_amount) AS sales
+      FROM fact_order_items GROUP BY category_id),
+    cat_stock AS (
+      SELECT category_id, avg(CASE WHEN date=DATE '{td}' THEN stockout_rate END) AS stockout_target,
+             avg(CASE WHEN date BETWEEN DATE '{b0}' AND DATE '{b1}' THEN stockout_rate END) AS stockout_base
+      FROM fact_inventory_daily GROUP BY category_id),
+    vend AS (
+      SELECT category_id, any_value(vendor_id) AS vendor_id, any_value(brand) AS brand
+      FROM dim_product GROUP BY category_id)
+    SELECT s.category_id, v.vendor_id, v.brand, s.stockout_target, s.stockout_base, cs.sales,
+           s.stockout_target * cs.sales AS impact
+    FROM cat_stock s JOIN cat_sales cs USING(category_id) JOIN vend v USING(category_id)
+    ORDER BY impact DESC"""
+    ev = con.execute(sql).df()
+    top = ev.iloc[0]
+    rel = float((top.stockout_target - top.stockout_base) / top.stockout_base) if top.stockout_base else 0.0
+    finding = (f"vendor '{top.vendor_id}' (brand {top.brand}) in category {top.category_id} carries the "
+               f"highest sales-weighted stockout impact ({top.stockout_target:.0%} stockout). Alert the partner.")
+    return sql, ev, rel, finding
+
+
 DRIVER_QUERY = {
     "campaign_mix": q_campaign_mix, "inventory_availability": q_inventory,
     "fulfillment_constraints": q_fulfillment, "funnel_behavior": q_funnel,
+    "service_signal": q_service, "finance_caveat": q_finance, "vendor_insight": q_vendor,
 }
 
 

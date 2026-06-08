@@ -62,6 +62,14 @@ SECTIONS = [
      lambda: _table(["Object", "Examples", "Purpose"], P.GRAPH_OBJECTS)),
     ("agents", "Agent Design & Reasoning Loop",
      lambda: _table(["Agent / role", "Purpose", "Primary tools", "MVP output"], P.AGENT_ROLES)),
+    ("team", "Multi-Agent Team — Specialization, Parallelism & Trade-offs",
+     lambda: f"<p>{_esc(P.MULTI_AGENT_INTRO)}</p>"
+             + _table(["Analyst", "Domain", "Phase", "Governed driver / focus"], P.ANALYST_TEAM)
+             + _table(["Phase", "Analysts added", "Focus"], P.PHASE_TEAM)
+             + "<p class='note'><b>When we use multiple agents</b></p>"
+             + _table(["Decision", "Rationale"], P.MULTI_AGENT_WHEN)
+             + "<p class='note'><b>Trade-offs accepted &amp; mitigations</b></p>"
+             + _table(["Trade-off", "Mitigation"], P.MULTI_AGENT_TRADEOFFS)),
     ("tot", "Conditional Tree-of-Thought Beam Search",
      lambda: _table(["ToT element", "Definition"], P.TOT_DEPTH)
              + _table(["Evaluation criterion", "Score"],
