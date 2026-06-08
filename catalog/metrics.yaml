@@ -1,0 +1,111 @@
+# Governed metric catalog (Plan section 7.1). Authoritative source of truth.
+# ChromaDB chunks and the NetworkX graph are generated from / validated against
+# this file. On conflict, YAML wins (Plan section 12).
+section_id: metrics
+metrics:
+  digital_conversion_rate:
+    label: "Digital Conversion"
+    domain: analytics
+    owner: "Digital Analytics"
+    definition: >
+      Completed eligible digital orders divided by digital web sessions for a
+      given date. Sessions and orders are counted at day grain.
+    numerator: "count(distinct fact_orders.order_id) where order_status='completed'"
+    denominator: "count(distinct fact_sessions.session_id)"
+    formula: "orders / sessions"
+    grain: day
+    approved_tables: [fact_sessions, fact_orders]
+    baseline_rule: "Compare target day against the prior 7-day average."
+    freshness_level: "T-1 (yesterday is the latest trustworthy day)"
+    caveats:
+      - "Same-day (T-0) data may be incomplete; trust T-1."
+      - "Bot/internal traffic excluded in synthetic data by construction."
+    example_questions:
+      - "Why did digital conversion drop yesterday vs the prior 7-day average?"
+      - "Why is our online conversion down compared to last week?"
+
+  paid_social_conversion:
+    label: "Campaign Conversion"
+    domain: marketing
+    owner: "Marketing"
+    definition: "Digital conversion restricted to channel = 'paid_social'."
+    formula: "paid_social_orders / paid_social_sessions"
+    grain: day
+    approved_tables: [fact_sessions, fact_orders, dim_campaign]
+    freshness_level: "T-1"
+    caveats: ["Campaign mix shifts can move blended conversion with no funnel defect."]
+    example_questions: ["Did a campaign drive traffic that converted below normal?"]
+
+  stockout_rate:
+    label: "Inventory Availability"
+    domain: merchandising
+    owner: "Merchandising"
+    definition: "Share of viewed products flagged not available_online for a category/day."
+    formula: "1 - available_online_flag"
+    grain: day
+    approved_tables: [fact_inventory_daily, dim_category]
+    freshness_level: "T-1"
+    caveats: ["High product views with low availability suppresses conversion."]
+    example_questions: ["Which categories had high traffic but low conversion?"]
+
+  fulfillment_delay_rate:
+    label: "Fulfillment Delay Rate"
+    domain: fulfillment
+    owner: "Fulfillment Operations"
+    definition: "Average promised-to-actual delivery delay (days) by region/day."
+    formula: "avg(actual_days - promise_days)"
+    grain: day
+    approved_tables: [fact_fulfillment]
+    freshness_level: "T-1"
+    caveats: ["Reduced fulfillment options can deter checkout even without explicit delay."]
+    example_questions: ["Did fulfillment delays or reduced options hurt conversion?"]
+
+  funnel_purchase_rate:
+    label: "Checkout Funnel Rate"
+    domain: analytics
+    owner: "Digital Analytics"
+    definition: "Purchases divided by add_to_cart events for a category/device/day."
+    formula: "purchase_events / add_to_cart_events"
+    grain: day
+    approved_tables: [fact_events]
+    freshness_level: "T-1"
+    caveats: ["Funnel drop isolates on-site behavior from traffic-mix effects."]
+    example_questions: ["Were customers abandoning after product view or cart?"]
+
+  # --- Service metrics ---
+  service_contact_rate:
+    label: "Customer Contact Rate"
+    domain: service
+    owner: "Customer Service"
+    definition: "Customer service contacts per day, by reason code; spikes after operational issues."
+    formula: "count(contacts) by reason_code / day"
+    grain: day
+    approved_tables: [fact_customer_contacts]
+    freshness_level: "T-1"
+    caveats: ["Contact spikes follow root causes; treat as a corroborating signal, not a cause."]
+    example_questions: ["Did delivery delays increase customer contacts?"]
+
+  # --- Finance & vendor metrics ---
+  net_revenue_ratio:
+    label: "Net-to-Gross Revenue Ratio"
+    domain: finance
+    owner: "Finance"
+    definition: "Net revenue divided by gross sales for a day; explains gross-to-net differences."
+    formula: "net_revenue / gross_sales"
+    grain: day
+    approved_tables: [fact_finance_daily]
+    freshness_level: "T-1"
+    caveats: ["Finance and operational totals differ by returns, tax, shipping, timing, adjustments."]
+    example_questions: ["Why does ecommerce sales not match finance revenue?"]
+
+  vendor_stockout_impact:
+    label: "Vendor Stockout Impact"
+    domain: merchandising
+    owner: "Merchandising"
+    definition: "Stockout pressure attributed to a vendor/category, weighted by sales exposure."
+    formula: "stockout_rate weighted by category sales"
+    grain: day
+    approved_tables: [fact_inventory_daily, dim_product, fact_order_items]
+    freshness_level: "T-1"
+    caveats: ["Vendor attribution is directional; confirm with the category partner before action."]
+    example_questions: ["Which vendor or category partner should be alerted about stockout impact?"]

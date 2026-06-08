@@ -1,0 +1,234 @@
+"""
+Conditional Tree-of-Thought beam search (Plan section 11).
+
+Generates candidate driver branches, runs one read-only DuckDB evidence query
+per branch, scores each on the 0-14 rubric (11.1), prunes weak branches, and
+keeps the top `BEAM_WIDTH`. Includes a governance pre-screen that rejects
+ungoverned hypotheses (no certified metric/table) without spending query budget.
+
+Used by src/workflow.py (the LangGraph controller).
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+import pandas as pd
+
+from . import catalog, graph, guardrails
+
+BEAM_WIDTH = 2          # Plan section 11.1
+DEPTH_LIMIT = 2
+DRIVER_PATH_BUDGET = 3  # Plan section 13: up to three driver-path queries
+FOLLOWUP_BUDGET = 1
+QUERY_BUDGET = 1 + DRIVER_PATH_BUDGET + FOLLOWUP_BUDGET   # 1 baseline + 3 + 1 = 5
+
+PRIMARY_DRIVERS = ["campaign_mix", "inventory_availability", "fulfillment_constraints"]
+RESERVE_DRIVER = "funnel_behavior"
+
+
+@dataclass
+class Branch:
+    driver: str
+    label: str = ""
+    owner: str = ""
+    hypothesis: str = ""
+    sql: str = ""
+    evidence: pd.DataFrame | None = None
+    signal: float = 0.0
+    finding: str = ""
+    scores: dict = field(default_factory=dict)
+    total: int = 0
+    confidence: str = ""
+    sub_drivers: list = field(default_factory=list)
+    governed: bool = True
+
+
+def _rel_score(rel: float) -> int:
+    a = abs(rel)
+    return 3 if a >= 0.50 else 2 if a >= 0.25 else 1 if a >= 0.10 else 0
+
+
+# --------------------------------------------------------------------------
+# Driver evidence queries (read-only). Each returns (sql, df, signal, finding).
+# --------------------------------------------------------------------------
+def q_campaign_mix(con, td, b0, b1):
+    sql = f"""
+    WITH t AS (SELECT channel, count(*) n FROM fact_sessions WHERE date=DATE '{td}' GROUP BY channel),
+         b AS (SELECT channel, count(*)*1.0/7 n FROM fact_sessions
+               WHERE date BETWEEN DATE '{b0}' AND DATE '{b1}' GROUP BY channel)
+    SELECT t.channel,
+           t.n*1.0/(SELECT sum(n) FROM t) AS share_target,
+           b.n*1.0/(SELECT sum(n) FROM b) AS share_base,
+           (SELECT sum(CASE WHEN converted THEN 1 ELSE 0 END)*1.0/count(*) FROM fact_sessions f
+            WHERE f.date=DATE '{td}' AND f.channel=t.channel) AS conv_target
+    FROM t JOIN b USING(channel) ORDER BY share_target DESC"""
+    ev = con.execute(sql).df()
+    ps = ev[ev.channel == "paid_social"].iloc[0]
+    rel = float((ps.share_target - ps.share_base) / ps.share_base)
+    finding = (f"paid_social session share rose {ps.share_base:.0%}->{ps.share_target:.0%} "
+               f"while converting at {ps.conv_target:.1%} (below the ~2.4% baseline).")
+    return sql, ev, rel, finding
+
+
+def q_inventory(con, td, b0, b1):
+    sql = f"""
+    SELECT i.category_id, c.category_name,
+           avg(CASE WHEN date=DATE '{td}' THEN stockout_rate END) AS stockout_target,
+           avg(CASE WHEN date BETWEEN DATE '{b0}' AND DATE '{b1}' THEN stockout_rate END) AS stockout_base,
+           avg(CASE WHEN date=DATE '{td}' THEN product_views END) AS views_target
+    FROM fact_inventory_daily i JOIN dim_category c USING(category_id)
+    GROUP BY i.category_id, c.category_name ORDER BY stockout_target DESC"""
+    ev = con.execute(sql).df()
+    top = ev.iloc[0]
+    rel = float((top.stockout_target - top.stockout_base) / top.stockout_base)
+    finding = (f"category '{top.category_name}' stockout rose "
+               f"{top.stockout_base:.0%}->{top.stockout_target:.0%} on high product "
+               f"views ({int(top.views_target):,}).")
+    return sql, ev, rel, finding
+
+
+def q_fulfillment(con, td, b0, b1):
+    sql = f"""
+    SELECT region,
+           avg(CASE WHEN date=DATE '{td}' THEN delay_days END) AS delay_target,
+           avg(CASE WHEN date BETWEEN DATE '{b0}' AND DATE '{b1}' THEN delay_days END) AS delay_base,
+           avg(CASE WHEN date=DATE '{td}' THEN options_available END) AS options_target
+    FROM fact_fulfillment GROUP BY region ORDER BY delay_target DESC"""
+    ev = con.execute(sql).df()
+    top = ev.iloc[0]
+    rel = float((top.delay_target - top.delay_base) / top.delay_base)
+    finding = (f"region '{top.region}' delivery delay rose {top.delay_base:.1f}d->"
+               f"{top.delay_target:.1f}d with options cut to {int(top.options_target)}.")
+    return sql, ev, rel, finding
+
+
+def q_funnel(con, td, b0, b1):
+    sql = f"""
+    WITH ev AS (
+      SELECT date, category_id,
+             sum(CASE WHEN event_type='add_to_cart' THEN 1 ELSE 0 END) carts,
+             sum(CASE WHEN event_type='purchase' THEN 1 ELSE 0 END) purch
+      FROM fact_events GROUP BY date, category_id)
+    SELECT e.category_id, c.category_name,
+           sum(CASE WHEN date=DATE '{td}' THEN purch ELSE 0 END)*1.0
+             / nullif(sum(CASE WHEN date=DATE '{td}' THEN carts ELSE 0 END),0) AS rate_target,
+           sum(CASE WHEN date BETWEEN DATE '{b0}' AND DATE '{b1}' THEN purch ELSE 0 END)*1.0
+             / nullif(sum(CASE WHEN date BETWEEN DATE '{b0}' AND DATE '{b1}' THEN carts ELSE 0 END),0) AS rate_base
+    FROM ev e JOIN dim_category c USING(category_id)
+    GROUP BY e.category_id, c.category_name"""
+    ev = con.execute(sql).df()
+    ev["rel"] = (ev.rate_target - ev.rate_base) / ev.rate_base
+    overall = float((ev.rate_target.mean() - ev.rate_base.mean()) / ev.rate_base.mean())
+    ev["excess"] = (ev.rel - overall).abs()
+    worst = ev.iloc[ev.excess.argmax()]
+    excess = float(worst.excess)
+    finding = (f"cart-to-purchase moved with the overall {overall:+.0%}; worst category "
+               f"'{worst.category_name}' deviates only {excess:.0%} - limited isolated funnel defect.")
+    return sql, ev, excess, finding
+
+
+def q_service(con, td, b0, b1):
+    """Customer-contact spike, by reason code, vs baseline."""
+    sql = f"""
+    SELECT reason_code,
+           sum(CASE WHEN date=DATE '{td}' THEN 1 ELSE 0 END) AS contacts_target,
+           sum(CASE WHEN date BETWEEN DATE '{b0}' AND DATE '{b1}' THEN 1 ELSE 0 END)/7.0 AS contacts_base
+    FROM fact_customer_contacts GROUP BY reason_code ORDER BY contacts_target DESC"""
+    ev = con.execute(sql).df()
+    tot_t = float(ev.contacts_target.sum()); tot_b = float(ev.contacts_base.sum()) or 1.0
+    rel = (tot_t - tot_b) / tot_b
+    top = ev.iloc[0]
+    finding = (f"customer contacts rose {tot_b:.0f}->{tot_t:.0f}/day ({rel:+.0%}); top reason "
+               f"'{top.reason_code}' - corroborates an operational issue.")
+    return sql, ev, rel, finding
+
+
+def q_finance(con, td, b0, b1):
+    """Gross-to-net reconciliation caveat."""
+    sql = f"""
+    SELECT sum(CASE WHEN date=DATE '{td}' THEN gross_sales ELSE 0 END) AS gross_t,
+           sum(CASE WHEN date=DATE '{td}' THEN net_revenue ELSE 0 END) AS net_t,
+           sum(CASE WHEN date=DATE '{td}' THEN returns ELSE 0 END) AS returns_t,
+           avg(CASE WHEN date BETWEEN DATE '{b0}' AND DATE '{b1}'
+                    THEN returns/nullif(gross_sales,0) END) AS return_rate_base,
+           sum(CASE WHEN date=DATE '{td}' THEN returns ELSE 0 END)
+             / nullif(sum(CASE WHEN date=DATE '{td}' THEN gross_sales ELSE 0 END),0) AS return_rate_t
+    FROM fact_finance_daily"""
+    ev = con.execute(sql).df()
+    r = ev.iloc[0]
+    gap = float((r.gross_t - r.net_t) / r.gross_t) if r.gross_t else 0.0
+    rel = float((r.return_rate_t - r.return_rate_base) / r.return_rate_base) if r.return_rate_base else 0.0
+    finding = (f"net revenue is {gap:.0%} off gross (returns/tax/shipping/adjustments); "
+               f"return rate {r.return_rate_t:.1%} vs {r.return_rate_base:.1%} baseline. "
+               f"Reconciliation caveat - not an operational conversion cause.")
+    return sql, ev, rel, finding
+
+
+def q_vendor(con, td, b0, b1):
+    """Vendor/category stockout impact weighted by sales exposure."""
+    sql = f"""
+    WITH cat_sales AS (
+      SELECT category_id, sum(item_amount) AS sales
+      FROM fact_order_items GROUP BY category_id),
+    cat_stock AS (
+      SELECT category_id, avg(CASE WHEN date=DATE '{td}' THEN stockout_rate END) AS stockout_target,
+             avg(CASE WHEN date BETWEEN DATE '{b0}' AND DATE '{b1}' THEN stockout_rate END) AS stockout_base
+      FROM fact_inventory_daily GROUP BY category_id),
+    vend AS (
+      SELECT category_id, any_value(vendor_id) AS vendor_id, any_value(brand) AS brand
+      FROM dim_product GROUP BY category_id)
+    SELECT s.category_id, v.vendor_id, v.brand, s.stockout_target, s.stockout_base, cs.sales,
+           s.stockout_target * cs.sales AS impact
+    FROM cat_stock s JOIN cat_sales cs USING(category_id) JOIN vend v USING(category_id)
+    ORDER BY impact DESC"""
+    ev = con.execute(sql).df()
+    top = ev.iloc[0]
+    rel = float((top.stockout_target - top.stockout_base) / top.stockout_base) if top.stockout_base else 0.0
+    finding = (f"vendor '{top.vendor_id}' (brand {top.brand}) in category {top.category_id} carries the "
+               f"highest sales-weighted stockout impact ({top.stockout_target:.0%} stockout). Alert the partner.")
+    return sql, ev, rel, finding
+
+
+DRIVER_QUERY = {
+    "campaign_mix": q_campaign_mix, "inventory_availability": q_inventory,
+    "fulfillment_constraints": q_fulfillment, "funnel_behavior": q_funnel,
+    "service_signal": q_service, "finance_caveat": q_finance, "vendor_insight": q_vendor,
+}
+
+
+def make_branch(driver: str) -> Branch:
+    d = catalog.get_driver(driver) or {}
+    return Branch(driver=driver, label=d.get("label", driver), owner=d.get("owner", ""),
+                  hypothesis=d.get("hypothesis", ""), sub_drivers=list(d.get("sub_drivers", [])))
+
+
+def ungoverned_branch() -> Branch:
+    """A plausible-sounding hypothesis with no governed backing (Plan section 12)."""
+    b = Branch(driver="price_increase", label="Price increase (proposed)", owner="",
+               hypothesis="Maybe prices rose and deterred buyers?", governed=False)
+    b.sql = "SELECT avg(price) FROM pricing WHERE date = 'yesterday'"
+    return b
+
+
+def score_branch(b: Branch, g, fresh_ok: bool) -> Branch:
+    drv = catalog.get_driver(b.driver) or {}
+    metric = drv.get("metric")
+    metric_ok = bool(metric) and metric in catalog.load_catalog().get("metrics", {})
+    gpath = graph.driver_path(g, b.driver)
+    sql_ok, _ = guardrails.check_sql(b.sql) if b.sql else (False, "")
+    has_rows = b.evidence is not None and len(b.evidence) > 0
+    material = abs(b.signal) >= 0.10
+
+    b.scores = {
+        "metric_validated_yaml": 2 if metric_ok else 0,                 # 0-2
+        "approved_graph_path": 2 if gpath else 0,                       # 0-2
+        "sql_safety_template": 2 if sql_ok else 0,                      # 0-2
+        "duckdb_evidence_strength": _rel_score(b.signal),              # 0-3
+        "freshness_row_quality": 2 if (fresh_ok and has_rows and material) else 0,  # 0-2
+        "business_relevance_owner": (2 if abs(b.signal) >= 0.25 else 1 if material else 0)
+                                    if b.owner else 0,                  # 0-2
+        "caveats_manageable": 1 if abs(b.signal) >= 0.25 else 0,        # 0-1
+    }
+    b.total = sum(b.scores.values())
+    b.confidence = guardrails.evidence_gate(b.total)
+    return b
