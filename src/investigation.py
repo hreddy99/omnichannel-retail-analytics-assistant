@@ -17,10 +17,12 @@ __all__ = ["run_investigation", "BEAM_WIDTH", "QUERY_BUDGET"]
 
 
 def run_investigation(question: str, seed: int = 42, use_index: bool = True,
-                      phase=1, inject_failure: str | None = None) -> dict:
+                      phase="all", inject_failure: str | None = None) -> dict:
     """Execute the full governed multi-agent workflow and return a structured trace.
 
-    phase: 1 | 2 | 3 | "all" - scopes which specialized analysts the team dispatches.
+    The app runs unified: the full specialized analyst team is dispatched every
+    time (phase defaults to "all"); phases are an internal team-composition detail,
+    not a user-facing concept.
     inject_failure: optional agent key forced to fail (demonstrates graceful degradation).
     """
     con = build_duckdb(seed)

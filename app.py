@@ -426,28 +426,22 @@ def _tab_team(t):
 
 def page_demo():
     st.title("🔬 Live Demo — Governed Multi-Agent Investigation")
-    st.write("Runs the real LangGraph pipeline on Faker-generated synthetic data. A team of "
-             "specialized analysts is dispatched in parallel; results are exposed through the "
-             "plan's four trace levels plus a multi-agent team view.")
+    st.write("Runs the real LangGraph pipeline on synthetic data. A team of specialized "
+             "analysts is dispatched in parallel; results are exposed through four trace "
+             "levels plus a multi-agent team view.")
     probe = llm.probe()
     st.caption(f"LLM: {probe['detail']}")
 
     options = P.DEMO_QUESTIONS + ["✍️ Custom question…"]
     choice = st.selectbox("Pick a demo question", options, index=0)
     question = st.text_input("Question", value="" if choice.startswith("✍️") else choice)
-    col1, col2 = st.columns(2)
-    phase_label = col1.selectbox(
-        "Phase scope (which analysts are dispatched)",
-        ["Phase I (conversion drivers)", "Phase II (+ customer service)",
-         "Phase III (+ finance, vendor, executive summary)"], index=0)
-    phase = {"Phase I (conversion drivers)": 1, "Phase II (+ customer service)": 2,
-             "Phase III (+ finance, vendor, executive summary)": 3}[phase_label]
     fail_opts = {"(none)": None, "Marketing Analyst": "campaign_mix",
                  "Merchandising Analyst": "inventory_availability",
                  "Fulfillment Analyst": "fulfillment_constraints",
                  "Customer Service Analyst": "service_signal"}
-    fail_label = col2.selectbox("Simulate an agent failure (demonstrates graceful degradation)",
-                                list(fail_opts), index=0)
+    with st.expander("Advanced — resilience demo (optional)"):
+        fail_label = st.selectbox("Simulate an agent failure (shows graceful degradation)",
+                                  list(fail_opts), index=0)
 
     if not st.button("Run investigation", type="primary"):
         st.caption("Tip: try *“update the paid_social budget”* to see the read-only guardrail refuse.")
@@ -456,7 +450,7 @@ def page_demo():
         st.warning("Enter a question first.")
         return
     with st.spinner("Investigating with the analyst team…"):
-        t = run_investigation(question, phase=phase, inject_failure=fail_opts[fail_label])
+        t = run_investigation(question, inject_failure=fail_opts[fail_label])
     if t.get("refusal"):
         st.error("🛡️ **Guardrail (read-only):** " + t["refusal"])
     tabs = st.tabs(["💬 Business answer", "👥 Multi-agent team", "📊 Evidence", "🔎 Trust details",

@@ -45,8 +45,9 @@ The domain investigations are run by a **team of specialized AI agents** dispatc
   the team continues). The Live Demo's "Simulate an agent failure" control shows
   this graceful degradation live.
 
-Select **Phase I / II / III** in the Live Demo to scope which analysts are
-dispatched; the **Multi-agent team** tab shows the roster, parallel timeline,
+The app runs **unified** — the full analyst team is dispatched on every
+investigation (phases are an internal team-composition detail, not a user
+control). The **Multi-agent team** tab shows the roster, parallel timeline,
 per-analyst findings, coordination metrics, and the design trade-offs.
 
 A standout governance behavior: the ToT layer also proposes an *ungoverned*

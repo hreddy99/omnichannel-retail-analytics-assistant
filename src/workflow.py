@@ -265,25 +265,22 @@ def n_synthesize(state: WState) -> dict:
                  confidence=b.confidence, priority="high" if b.confidence == "likely driver" else "medium",
                  next_step=f"Investigate {b.label.lower()} and confirm with owner before any action.")
 
-    # Executive Summary Agent (Phase III / all): leadership-level synthesis across phases
-    phase = state.get("phase", 1)
-    exec_summary = None
-    if phase == 3 or phase == "all":
-        lines = [f"Digital conversion {pct:+.0%} day-over-baseline ({bl['target']:.2%} vs {bl['baseline']:.2%})."]
-        for d in drivers:
-            lines.append(f"{d['label']} — {d['confidence']} → {d['owner']}.")
-        for c in [b for b in deferred]:
-            lines.append(f"{c.label} — possible contributor → {c.owner}.")
-        exec_summary = {
-            "title": "Executive summary (Phase III)",
-            "bullets": lines,
-            "note": "Composed only from validated evidence packages; guarded language; "
-                    "recommendations are human-reviewed, no operational writes.",
-        }
-        a.event(workflow_node="executive_summary", decision_type="exec_summary_ready",
-                tool_name="Executive Summary Agent", output_summary="leadership summary composed",
-                user_visible_note="Executive summary composed across phases.")
-        _step(state, "executive summary (Phase III)", "Composed a leadership summary across the phase findings.")
+    # Executive Summary Agent: leadership-level synthesis across all analyst findings
+    lines = [f"Digital conversion {pct:+.0%} day-over-baseline ({bl['target']:.2%} vs {bl['baseline']:.2%})."]
+    for d in drivers:
+        lines.append(f"{d['label']} — {d['confidence']} → {d['owner']}.")
+    for c in deferred:
+        lines.append(f"{c.label} — possible contributor → {c.owner}.")
+    exec_summary = {
+        "title": "Executive summary",
+        "bullets": lines,
+        "note": "Composed only from validated evidence; guarded language; recommendations "
+                "are human-reviewed, no operational writes.",
+    }
+    a.event(workflow_node="executive_summary", decision_type="exec_summary_ready",
+            tool_name="Executive Summary Agent", output_summary="leadership summary composed",
+            user_visible_note="Executive summary composed across analyst findings.")
+    _step(state, "executive summary", "Composed a leadership summary across the analyst findings.")
 
     answer = {
         "headline": headline, "summary": summary,
