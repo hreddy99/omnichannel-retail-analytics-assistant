@@ -70,8 +70,23 @@ def run_investigation(question: str, seed: int = 42, use_index: bool = True,
 def run_investigation_stream(question: str, seed: int = 42, use_index: bool = True,
                              inject_failure: str | None = None):
     """Generator yielding ('step', step_dict) as the workflow executes each node,
-    then ('done', trace). Lets the UI show actual executing steps live."""
-    con, audit, state = _setup(question, seed, use_index, inject_failure)
+    then ('done', trace). Lets the UI show actual executing steps live, including
+    the (potentially slow, one-time) setup so progress is visible immediately."""
+    def prep(detail):
+        return ("step", {"node": "prepare", "detail": detail, "ok": True})
+
+    # Setup can be slow on the FIRST run (synthetic-data build + one-time embedding
+    # model download). Emit progress so the user sees activity, not a blank spinner.
+    yield prep("Generating synthetic retail data (DuckDB)…")
+    con = build_duckdb(seed)
+    audit = AuditLog()
+    g = graph.build_graph()
+    yield prep("Loading the governed vector index (first run downloads the embedding model — one time)…")
+    index = retrieval.get_index() if use_index else None
+    yield prep("Knowledge layers ready — starting the governed workflow.")
+
+    state = {"question": question, "con": con, "g": g, "meta": get_meta(seed),
+             "audit": audit, "index": index, "inject_failure": inject_failure}
     result: dict = {}
     seen = 0
     # stream_mode="values" yields the full state after each superstep; audit.steps
@@ -86,3 +101,4 @@ def run_investigation_stream(question: str, seed: int = 42, use_index: bool = Tr
         seen += 1
     con.close()
     yield ("done", _trace(result, audit, question))
+

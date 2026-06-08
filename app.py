@@ -453,6 +453,7 @@ def page_demo():
             if kind == "step":
                 icon = "✅" if payload["ok"] else "⚠️"
                 st.write(f"{icon} **{payload['node']}** — {payload['detail']}")
+                status.update(label=f"Running… {payload['node']}")
             else:
                 t = payload
         status.update(label="Investigation complete", state="complete", expanded=False)
