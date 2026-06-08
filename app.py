@@ -17,7 +17,7 @@ import streamlit as st
 from src import catalog, graph, guardrails, llm
 from src import plan_content as P
 from src import retrieval
-from src.investigation import BEAM_WIDTH, QUERY_BUDGET, run_investigation
+from src.investigation import BEAM_WIDTH, QUERY_BUDGET, run_investigation, run_investigation_stream
 
 st.set_page_config(page_title="Omnichannel Retail Analytics Assistant",
                    page_icon="🛍️", layout="wide")
@@ -449,8 +449,15 @@ def page_demo():
     if not question.strip():
         st.warning("Enter a question first.")
         return
-    with st.spinner("Investigating with the analyst team…"):
-        t = run_investigation(question, inject_failure=fail_opts[fail_label])
+    with st.status("Running investigation…", expanded=True) as status:
+        t = None
+        for kind, payload in run_investigation_stream(question, inject_failure=fail_opts[fail_label]):
+            if kind == "step":
+                icon = "✅" if payload["ok"] else "⚠️"
+                st.write(f"{icon} **{payload['node']}** — {payload['detail']}")
+            else:
+                t = payload
+        status.update(label="Investigation complete", state="complete", expanded=False)
     if t.get("refusal"):
         st.error("🛡️ **Guardrail (read-only):** " + t["refusal"])
     tabs = st.tabs(["💬 Business answer", "👥 Multi-agent team", "📊 Evidence", "🔎 Trust details",

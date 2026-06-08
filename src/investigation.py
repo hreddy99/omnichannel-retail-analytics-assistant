@@ -1,9 +1,14 @@
 """
 Investigation orchestrator (public entry point used by the Streamlit app).
 
-Wires the governed layers together and invokes the LangGraph workflow
-(src/workflow.py), returning a single trace dict consumed by the UI. Keeps the
-`run_investigation` signature stable across the refactor.
+Wires the governed layers together and invokes the multi-agent LangGraph
+workflow (src/workflow.py), returning a single trace dict consumed by the UI.
+
+Two entry points:
+  * run_investigation()        - run to completion, return the trace.
+  * run_investigation_stream() - generator that yields each decision-log step as
+                                 the workflow executes it (for live UI progress),
+                                 then yields ("done", trace).
 """
 from __future__ import annotations
 
@@ -13,29 +18,20 @@ from .synthetic_data import build_duckdb, get_meta
 from .tot import BEAM_WIDTH, QUERY_BUDGET  # re-export for the UI
 from .workflow import get_app
 
-__all__ = ["run_investigation", "BEAM_WIDTH", "QUERY_BUDGET"]
+__all__ = ["run_investigation", "run_investigation_stream", "BEAM_WIDTH", "QUERY_BUDGET"]
 
 
-def run_investigation(question: str, seed: int = 42, use_index: bool = True,
-                      phase="all", inject_failure: str | None = None) -> dict:
-    """Execute the full governed multi-agent workflow and return a structured trace.
-
-    The app runs unified: the full specialized analyst team is dispatched every
-    time (phase defaults to "all"); phases are an internal team-composition detail,
-    not a user-facing concept.
-    inject_failure: optional agent key forced to fail (demonstrates graceful degradation).
-    """
+def _setup(question, seed, use_index, phase, inject_failure):
     con = build_duckdb(seed)
-    g = graph.build_graph()
-    meta = get_meta(seed)
     audit = AuditLog()
-    index = retrieval.get_index() if use_index else None
+    state = {"question": question, "con": con, "g": graph.build_graph(),
+             "meta": get_meta(seed), "audit": audit,
+             "index": retrieval.get_index() if use_index else None,
+             "phase": phase, "inject_failure": inject_failure}
+    return con, audit, state
 
-    state = {"question": question, "con": con, "g": g, "meta": meta, "audit": audit,
-             "index": index, "phase": phase, "inject_failure": inject_failure}
-    result = get_app().invoke(state)
-    con.close()
 
+def _trace(result: dict, audit: AuditLog, question: str, phase) -> dict:
     return {
         "question": question,
         "phase": phase,
@@ -58,3 +54,37 @@ def run_investigation(question: str, seed: int = 42, use_index: bool = True,
         "catalog_version": catalog.version(),
         "catalog_hash": catalog.content_hash(),
     }
+
+
+def run_investigation(question: str, seed: int = 42, use_index: bool = True,
+                      phase="all", inject_failure: str | None = None) -> dict:
+    """Execute the full governed multi-agent workflow and return a structured trace.
+
+    The app runs unified: the full specialized analyst team is dispatched every
+    time (phase defaults to "all"); phases are an internal team-composition detail.
+    """
+    con, audit, state = _setup(question, seed, use_index, phase, inject_failure)
+    result = get_app().invoke(state)
+    con.close()
+    return _trace(result, audit, question, phase)
+
+
+def run_investigation_stream(question: str, seed: int = 42, use_index: bool = True,
+                             phase="all", inject_failure: str | None = None):
+    """Generator yielding ('step', step_dict) as the workflow executes each node,
+    then ('done', trace). Lets the UI show actual executing steps live."""
+    con, audit, state = _setup(question, seed, use_index, phase, inject_failure)
+    result: dict = {}
+    seen = 0
+    # stream_mode="values" yields the full state after each superstep; audit.steps
+    # grows as nodes run, so we emit newly-recorded steps as they appear.
+    for snapshot in get_app().stream(state, stream_mode="values"):
+        result = snapshot
+        while seen < len(audit.steps):
+            yield ("step", audit.steps[seen])
+            seen += 1
+    while seen < len(audit.steps):     # flush any final steps
+        yield ("step", audit.steps[seen])
+        seen += 1
+    con.close()
+    yield ("done", _trace(result, audit, question, phase))
