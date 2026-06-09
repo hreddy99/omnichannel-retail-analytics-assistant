@@ -45,6 +45,7 @@ def _trace(result: dict, audit: AuditLog, question: str) -> dict:
         "beam": result.get("beam", []),
         "deferred": result.get("deferred", []),
         "pruned": result.get("pruned", []),
+        "corroborating": result.get("corroborating", []),
         "depth2": result.get("depth2", []),
         "queries_used": result.get("queries_used", 0),
         "answer": result.get("answer", {}),

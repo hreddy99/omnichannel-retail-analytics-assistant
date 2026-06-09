@@ -269,6 +269,10 @@ def _tab_business(t):
         st.markdown("**Possible contributors (outside the beam):**")
         for d in a["contributors"]:
             st.markdown(f"- **{d['label']}** → {d['owner']} (score {d['score']}/14) — {d['finding']}")
+    if a.get("corroborating"):
+        st.markdown("**Corroborating signals (secondary — not direct causes):**")
+        for d in a["corroborating"]:
+            st.markdown(f"- **{d['label']}** → {d['owner']} — {d['finding']}")
     if a["pruned"]:
         st.markdown("**Pruned hypotheses:**")
         for p in a["pruned"]:

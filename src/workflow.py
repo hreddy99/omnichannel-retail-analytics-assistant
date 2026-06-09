@@ -24,6 +24,7 @@ class WState(TypedDict, total=False):
     inject_failure: str | None  # demo: force one agent to fail
     intent: str
     focus: str | None
+    corroborating: list
     con: Any
     g: Any
     meta: dict
@@ -53,6 +54,14 @@ def _step(state: WState, node: str, detail: str, ok: bool = True):
     state["audit"].step(node, detail, ok)
 
 
+# Drivers that can directly cause a conversion change vs. corroborating/secondary
+# signals (service contacts, finance reconciliation, vendor alerts). The beam ranks
+# PRIMARY drivers; corroborating signals are reported separately so the answer is
+# not dominated by, e.g., a vendor alert that mirrors the inventory finding.
+PRIMARY_DRIVERS_SET = {"campaign_mix", "inventory_availability",
+                       "fulfillment_constraints", "funnel_behavior"}
+CORROBORATING_SET = {"service_signal", "finance_caveat", "vendor_insight"}
+
 # Owner-routed recommended actions per driver (human-reviewed; no operational writes).
 RECOMMENDATIONS = {
     "campaign_mix": "Rebalance paid-social spend and audit campaign targeting/creative quality.",
@@ -77,14 +86,17 @@ _INTENT_LABEL = {
     "driver": "specific driver",
     "overall": "overall conversion drop",
 }
+# Order matters: more specific signals (vendor / finance / service / funnel) are
+# checked before the broad inventory/fulfillment patterns so e.g. "which VENDOR
+# should we alert about stockouts?" routes to vendor, not inventory.
 _FOCUS_PATTERNS = [
-    ("campaign_mix", r"channel|campaign|marketing|paid[ _]?social|traffic mix|\bads?\b|spend"),
-    ("inventory_availability", r"inventor|stock|stockout|availab|out of stock|sold out"),
-    ("fulfillment_constraints", r"fulfil|deliver|shipping|\bship\b|delay|fulfillment option|carrier|pickup"),
-    ("funnel_behavior", r"funnel|cart|checkout|abandon|on-?site|browse"),
+    ("vendor_insight", r"vendor|category partner|\bpartner\b|supplier"),
+    ("finance_caveat", r"financ|revenue|\bnet\b|gross|reconcil|margin"),
     ("service_signal", r"service|contact|support|complaint|\bcall(s|ed)?\b"),
-    ("finance_caveat", r"financ|revenue|\bnet\b|gross|reconcil|returns?|margin"),
-    ("vendor_insight", r"vendor|partner|supplier"),
+    ("funnel_behavior", r"funnel|cart|checkout|abandon|on-?site|browse"),
+    ("campaign_mix", r"channel|campaign|marketing|paid[ _]?social|traffic mix|\bads?\b|spend"),
+    ("fulfillment_constraints", r"fulfil|deliver|shipping|\bship\b|delay|fulfillment option|carrier|pickup"),
+    ("inventory_availability", r"inventor|stock|stockout|availab|out of stock|sold out"),
 ]
 
 
@@ -147,8 +159,13 @@ def n_retrieve(state: WState) -> dict:
             output_summary=f"retrieved {len(results)} chunks; "
                            f"{sum(r['validated'] for r in results)} validated vs YAML",
             user_visible_note=f"Retrieved {len(results)} governed context chunks.")
-    _step(state, "retrieve (ChromaDB)", f"Top-{len(results)} governed chunks retrieved; "
+    _step(state, "tool · ChromaDB retrieve", f"Top-{len(results)} governed chunks; "
           f"{sum(r['validated'] for r in results)} validated against YAML.")
+    for r in results[:5]:
+        m = r["metadata"]
+        _step(state, f"  ↳ chunk", f"{m.get('source_type')}: {m.get('name')} "
+              f"(owner {m.get('owner') or '-'}, dist {r['distance']:.2f}, "
+              f"{'validated' if r['validated'] else 'unvalidated'})")
     return {"retrieval": results}
 
 
@@ -166,12 +183,17 @@ def n_validate(state: WState) -> dict:
 def n_relate(state: WState) -> dict:
     a: AuditLog = state["audit"]
     g = state["g"]
-    paths = {d: graph.driver_path(g, d) for d in tot.PRIMARY_DRIVERS + [tot.RESERVE_DRIVER]}
+    drivers = list((catalog.load_catalog().get("drivers") or {}).keys())
+    paths = {d: graph.driver_path(g, d) for d in drivers}
     found = [d for d, p in paths.items() if p]
     a.event(workflow_node="graph_traverse", decision_type="drivers_related",
             tool_name="NetworkX", output_summary=f"related drivers: {', '.join(found)}",
             user_visible_note="Mapped metric to candidate drivers, tables, and owners.")
-    _step(state, "relate (NetworkX)", f"Graph path found for drivers: {', '.join(found)}.")
+    _step(state, "tool · NetworkX graph", f"Traversed metric → {len(found)} candidate drivers.")
+    for d in found:
+        p = paths[d]
+        _step(state, "  ↳ path", f"{(catalog.get_driver(d) or {}).get('label', d)}: "
+              f"uses {', '.join(p['tables'])} → owner {p['owner']}")
     return {}
 
 
@@ -236,6 +258,11 @@ def n_dispatch(state: WState) -> dict:
           "(%dms if sequential; %.1fx speedup); %d ok, %d failed." % (
               coord["n_agents"], coord["wall_ms"], coord["sequential_ms"],
               coord["speedup"], coord["n_ok"], coord["n_failed"]))
+    for r in sorted(results, key=lambda x: x.agent_name):
+        ok = r.status == "ok"
+        _step(state, f"agent · {r.agent_name}",
+              (f"queried {r.domain} ({r.elapsed_ms}ms) → {r.finding}" if ok
+               else f"FAILED ({r.error}) — excluded from synthesis."), ok)
     return {"agent_results": results, "coordination": coord,
             "queries_used": 1 + coord["n_ok"]}
 
@@ -266,6 +293,14 @@ def n_critic(state: WState) -> dict:
         b = tot.make_branch(r.key)
         b.sql, b.evidence, b.signal, b.finding = r.sql, r.evidence, r.signal, r.finding
         tot.score_branch(b, g, fresh_ok)
+        sc = b.scores
+        _step(state, f"thought · {b.label}", f"hypothesis — {b.hypothesis}")
+        _step(state, f"critic · {b.label}",
+              "score %d/14 (%s) [metric%d graph%d sql%d evidence%d fresh%d biz%d caveat%d]" % (
+                  b.total, b.confidence, sc["metric_validated_yaml"], sc["approved_graph_path"],
+                  sc["sql_safety_template"], sc["duckdb_evidence_strength"], sc["freshness_row_quality"],
+                  sc["business_relevance_owner"], sc["caveats_manageable"]),
+              b.confidence != "pruned")
         a.event(workflow_node="critic", decision_type="branch_scored", tool_name="Critic/Evaluator",
                 input_summary=f"agent={r.agent_name}", output_summary=r.finding[:70],
                 score_or_confidence=f"{b.total}/14 ({b.confidence})",
@@ -275,18 +310,24 @@ def n_critic(state: WState) -> dict:
     branches.sort(key=lambda x: (x.total, abs(x.signal)), reverse=True)
     pruned = [b for b in branches if b.confidence == "pruned"]
     qualified = [b for b in branches if b.confidence != "pruned"]
-    beam = qualified[:tot.BEAM_WIDTH]
-    deferred = qualified[tot.BEAM_WIDTH:]
+    # Beam ranks PRIMARY conversion drivers; corroborating signals are kept aside.
+    primary = [b for b in qualified if b.driver in PRIMARY_DRIVERS_SET]
+    corroborating = [b for b in qualified if b.driver in CORROBORATING_SET]
+    beam = primary[:tot.BEAM_WIDTH]
+    deferred = primary[tot.BEAM_WIDTH:]
     depth2 = [{"driver": b.driver, "sub_drivers": b.sub_drivers,
                "refined": f"Refine '{b.label}' into: {', '.join(b.sub_drivers)}."} for b in beam]
     _step(state, "critic + beam select (width %d)" % tot.BEAM_WIDTH,
-          "Beam kept %s; deferred %s; pruned %s; degraded %d." % (
+          "Primary drivers — beam kept %s; deferred %s. Corroborating signals: %s. "
+          "Pruned %s; degraded %d." % (
               ", ".join(b.driver for b in beam) or "none",
               ", ".join(b.driver for b in deferred) or "none",
+              ", ".join(b.driver for b in corroborating) or "none",
               ", ".join(b.driver for b in pruned) or "none", len(degraded)))
-    _step(state, "depth-2 refinement", "Refined surviving branches into sub-drivers for owner routing.")
+    _step(state, "depth-2 refinement",
+          "Refined surviving primary branches into sub-drivers for owner routing.")
     return {"branches": branches, "beam": beam, "deferred": deferred, "pruned": pruned,
-            "depth2": depth2, "degraded": degraded}
+            "corroborating": corroborating, "depth2": depth2, "degraded": degraded}
 
 
 def n_evidence_gate(state: WState) -> dict:
@@ -305,6 +346,7 @@ def n_synthesize(state: WState) -> dict:
     a: AuditLog = state["audit"]
     bl = state["baseline"]
     beam, deferred, pruned = state["beam"], state["deferred"], state["pruned"]
+    corroborating = state.get("corroborating", [])
     intent = state.get("intent", "overall")
     focus = state.get("focus")
     likely = [b for b in beam if b.confidence == "likely driver"]
@@ -314,14 +356,19 @@ def n_synthesize(state: WState) -> dict:
            f"({bl['target']:.2%} vs {bl['baseline']:.2%} prior-7-day average)")
     drivers = [{"label": b.label, "confidence": b.confidence, "owner": b.owner,
                 "finding": b.finding, "score": b.total} for b in beam]
+    corr_out = [{"label": b.label, "owner": b.owner, "finding": b.finding,
+                 "confidence": b.confidence, "score": b.total} for b in corroborating]
 
-    # action log + recommendations (focus driver first when the question targets one)
-    ordered = beam + deferred
+    # action log + recommendations: primary beam (act now), deferred primary
+    # (investigate), corroborating signals (monitor). Focus driver first.
+    pri_map = {id(b): ("high" if b in beam else "medium") for b in beam + deferred}
+    pri_map.update({id(b): "monitor" for b in corroborating})
+    ordered = beam + deferred + corroborating
     if focus:
         ordered = sorted(ordered, key=lambda b: 0 if b.driver == focus else 1)
     recos = []
     for b in ordered:
-        pri = "high" if b in beam else "medium"
+        pri = pri_map.get(id(b), "medium")
         action = RECOMMENDATIONS.get(b.driver, "Investigate and confirm with the owner before acting.")
         a.action(owner=b.owner, issue=b.label, evidence=b.finding, confidence=b.confidence,
                  priority=pri, next_step=action)
@@ -329,7 +376,7 @@ def n_synthesize(state: WState) -> dict:
                       "confidence": b.confidence, "rationale": b.finding})
 
     # ---- headline + factual lead, TUNED to the question intent ----------
-    all_branches = beam + deferred + pruned
+    all_branches = beam + deferred + corroborating + pruned
     fb = next((b for b in all_branches if b.driver == focus), None) if focus else None
     if intent == "actions":
         headline = "Recommended next actions, routed to each owner."
@@ -347,12 +394,17 @@ def n_synthesize(state: WState) -> dict:
                  "seed, so magnitudes are illustrative. Read-only analysis; causality is labeled "
                  f"(likely driver / possible contributor), not proven. For context, {ctx}.")
     elif intent == "driver" and fb is not None:
-        verdict = ({"likely driver": "Yes", "possible contributor": "Possibly"}
-                   .get(fb.confidence, "No clear evidence"))
-        phrase = ({"likely driver": "is a likely driver of",
-                   "possible contributor": "is a possible contributor to"}
-                  .get(fb.confidence, "shows no strong effect on"))
-        headline = f"{verdict} — {fb.label} {phrase} yesterday's conversion change."
+        if fb.driver in CORROBORATING_SET:
+            seen = fb.confidence != "pruned"
+            headline = (f"{'Yes' if seen else 'No clear evidence'} — {fb.label} is a "
+                        f"corroborating signal (not a direct cause) for yesterday's change.")
+        else:
+            verdict = ({"likely driver": "Yes", "possible contributor": "Possibly"}
+                       .get(fb.confidence, "No clear evidence"))
+            phrase = ({"likely driver": "is a likely driver of",
+                       "possible contributor": "is a possible contributor to"}
+                      .get(fb.confidence, "shows no strong effect on"))
+            headline = f"{verdict} — {fb.label} {phrase} yesterday's conversion change."
         facts = f"{fb.finding} (confidence: {fb.confidence}). For context, {ctx}."
     else:  # overall
         headline = (f"Digital conversion fell {abs(pct):.0%} yesterday "
@@ -366,8 +418,9 @@ def n_synthesize(state: WState) -> dict:
     es_title = ("Executive summary — recommended actions" if intent == "actions"
                 else "Executive summary")
     bullets = [f"In answer to: \"{state['question']}\"", f"Context: {ctx}."]
+    _tag = {"high": "Act now", "medium": "Investigate next", "monitor": "Monitor (corroborating)"}
     for r in recos:
-        tag = "Act now" if r["priority"] == "high" else "Investigate next"
+        tag = _tag.get(r["priority"], "Investigate next")
         bullets.append(f"{tag} — **{r['owner']}**: {r['action']} (basis: {r['rationale']})")
     if not recos:
         bullets.append("No driver cleared the evidence threshold; recommend the listed next checks.")
@@ -388,6 +441,7 @@ def n_synthesize(state: WState) -> dict:
         "contributors": [{"label": b.label, "confidence": "possible contributor (outside beam)",
                           "owner": b.owner, "finding": b.finding, "score": b.total} for b in deferred],
         "pruned": [{"label": b.label, "reason": b.finding, "score": b.total} for b in pruned],
+        "corroborating": corr_out,
         "degraded": state.get("degraded", []),
         "recommendation": ("Evidence points to multiple compounding drivers rather than a single "
                            "cause. Route each likely driver to its owner for a human-reviewed check "
