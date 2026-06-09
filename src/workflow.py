@@ -25,6 +25,9 @@ class WState(TypedDict, total=False):
     intent: str
     focus: str | None
     corroborating: list
+    top_k: int
+    beam_width: int
+    depth: int
     con: Any
     g: Any
     meta: dict
@@ -131,6 +134,8 @@ def n_classify(state: WState) -> dict:
             user_visible_note=f"Classified intent: {detail}.")
     _step(state, "classify", f"Classified the question — intent: **{detail}** "
           "(metric=digital_conversion_rate, baseline=prior 7-day average).")
+    _step(state, "parameters", "Run parameters — retrieval top-k=%d, beam width=%d, ToT depth=%d." % (
+        state.get("top_k", 5), state.get("beam_width", tot.BEAM_WIDTH), state.get("depth", tot.DEPTH_LIMIT)))
     return {"refusal": refusal, "queries_used": 0, "intent": intent, "focus": focus}
 
 
@@ -153,13 +158,14 @@ def n_sync_gate(state: WState) -> dict:
 def n_retrieve(state: WState) -> dict:
     a: AuditLog = state["audit"]
     idx = state.get("index")
-    results = idx.retrieve(state["question"], top_k=5) if idx else []
+    top_k = state.get("top_k", 5)
+    results = idx.retrieve(state["question"], top_k=top_k) if idx else []
     a.event(workflow_node="retrieve_context", decision_type="topk_retrieved",
             tool_name="ChromaDB", input_summary=state["question"][:60],
-            output_summary=f"retrieved {len(results)} chunks; "
+            output_summary=f"retrieved {len(results)} chunks (top_k={top_k}); "
                            f"{sum(r['validated'] for r in results)} validated vs YAML",
-            user_visible_note=f"Retrieved {len(results)} governed context chunks.")
-    _step(state, "tool · ChromaDB retrieve", f"Top-{len(results)} governed chunks; "
+            user_visible_note=f"Retrieved {len(results)} governed context chunks (top_k={top_k}).")
+    _step(state, "tool · ChromaDB retrieve", f"top_k={top_k}: retrieved {len(results)} governed chunks; "
           f"{sum(r['validated'] for r in results)} validated against YAML.")
     for r in results[:5]:
         m = r["metadata"]
@@ -311,21 +317,29 @@ def n_critic(state: WState) -> dict:
     pruned = [b for b in branches if b.confidence == "pruned"]
     qualified = [b for b in branches if b.confidence != "pruned"]
     # Beam ranks PRIMARY conversion drivers; corroborating signals are kept aside.
+    bw = state.get("beam_width", tot.BEAM_WIDTH)
+    depth = state.get("depth", tot.DEPTH_LIMIT)
     primary = [b for b in qualified if b.driver in PRIMARY_DRIVERS_SET]
     corroborating = [b for b in qualified if b.driver in CORROBORATING_SET]
-    beam = primary[:tot.BEAM_WIDTH]
-    deferred = primary[tot.BEAM_WIDTH:]
-    depth2 = [{"driver": b.driver, "sub_drivers": b.sub_drivers,
-               "refined": f"Refine '{b.label}' into: {', '.join(b.sub_drivers)}."} for b in beam]
-    _step(state, "critic + beam select (width %d)" % tot.BEAM_WIDTH,
+    beam = primary[:bw]
+    deferred = primary[bw:]
+    depth2 = ([{"driver": b.driver, "sub_drivers": b.sub_drivers,
+                "refined": f"Refine '{b.label}' into: {', '.join(b.sub_drivers)}."} for b in beam]
+              if depth >= 2 else [])
+    _step(state, "critic + beam select (width %d)" % bw,
           "Primary drivers — beam kept %s; deferred %s. Corroborating signals: %s. "
           "Pruned %s; degraded %d." % (
               ", ".join(b.driver for b in beam) or "none",
               ", ".join(b.driver for b in deferred) or "none",
               ", ".join(b.driver for b in corroborating) or "none",
               ", ".join(b.driver for b in pruned) or "none", len(degraded)))
-    _step(state, "depth-2 refinement",
-          "Refined surviving primary branches into sub-drivers for owner routing.")
+    if depth >= 2:
+        for d in depth2:
+            _step(state, "depth-2 refinement",
+                  f"{(catalog.get_driver(d['driver']) or {}).get('label', d['driver'])} → "
+                  f"sub-drivers: {', '.join(d['sub_drivers'])}")
+    else:
+        _step(state, "depth-1 only", "ToT depth=1 — sub-driver refinement skipped.")
     return {"branches": branches, "beam": beam, "deferred": deferred, "pruned": pruned,
             "corroborating": corroborating, "depth2": depth2, "degraded": degraded}
 

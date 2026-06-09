@@ -343,7 +343,7 @@ def _tab_tot(t):
     if not t["tot_activated"]:
         st.info("ToT not activated for this question (single obvious path).")
         return
-    st.markdown(f"**Beam (kept top {BEAM_WIDTH}):**")
+    st.markdown(f"**Primary-driver beam (kept top {len(t['beam'])}):**")
     for b in t["beam"]:
         _scorecard(b)
         with st.expander(f"Score breakdown & SQL — {b.label}"):
@@ -352,8 +352,12 @@ def _tab_tot(t):
             if b.sql:
                 st.code(b.sql, language="sql")
     if t["deferred"]:
-        st.markdown("**Deferred (qualified, outside beam):**")
+        st.markdown("**Deferred primary drivers (qualified, outside beam):**")
         for b in t["deferred"]:
+            _scorecard(b)
+    if t.get("corroborating"):
+        st.markdown("**Corroborating signals (secondary — service / finance / vendor):**")
+        for b in t["corroborating"]:
             _scorecard(b)
     if t["pruned"]:
         st.markdown("**Pruned (below threshold / ungoverned):**")
@@ -445,6 +449,14 @@ def page_demo():
                  "Merchandising Analyst": "inventory_availability",
                  "Fulfillment Analyst": "fulfillment_constraints",
                  "Customer Service Analyst": "service_signal"}
+    st.markdown("**Reasoning parameters** — tune these to see their impact on the answer:")
+    p1, p2, p3 = st.columns(3)
+    top_k = p1.selectbox("Retrieval top-k", [3, 5, 8, 10], index=1,
+                         help="How many governed context chunks ChromaDB retrieves for grounding.")
+    beam_width = p2.selectbox("ToT beam width", [1, 2, 3, 4], index=1,
+                              help="How many primary conversion drivers the beam keeps as likely drivers.")
+    depth = p3.selectbox("ToT depth", [1, 2], index=1,
+                         help="Depth 2 adds sub-driver refinement; depth 1 stops at driver selection.")
     with st.expander("Advanced — resilience demo (optional)"):
         fail_label = st.selectbox("Simulate an agent failure (shows graceful degradation)",
                                   list(fail_opts), index=0)
@@ -457,7 +469,9 @@ def page_demo():
         return
     with st.status("Running investigation…", expanded=True) as status:
         t = None
-        for kind, payload in run_investigation_stream(question, inject_failure=fail_opts[fail_label]):
+        for kind, payload in run_investigation_stream(
+                question, inject_failure=fail_opts[fail_label],
+                top_k=top_k, beam_width=beam_width, depth=depth):
             if kind == "step":
                 icon = "✅" if payload["ok"] else "⚠️"
                 st.write(f"{icon} **{payload['node']}** — {payload['detail']}")
