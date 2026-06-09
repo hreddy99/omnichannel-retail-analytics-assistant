@@ -469,16 +469,21 @@ def page_demo():
         return
     with st.status("Running investigation…", expanded=True) as status:
         t = None
+        n_steps = 0
         for kind, payload in run_investigation_stream(
                 question, inject_failure=fail_opts[fail_label],
                 top_k=top_k, beam_width=beam_width, depth=depth):
             if kind == "step":
                 icon = "✅" if payload["ok"] else "⚠️"
                 st.write(f"{icon} **{payload['node']}** — {payload['detail']}")
+                n_steps += 1
                 status.update(label=f"Running… {payload['node']}")
             else:
                 t = payload
-        status.update(label="Investigation complete", state="complete", expanded=False)
+        # Keep the panel EXPANDED so the full tool/agent/thought trace stays visible
+        # (collapsing it would hide every step and leave only the last line).
+        status.update(label=f"Investigation complete — {n_steps} reasoning steps (full trace below)",
+                      state="complete", expanded=True)
     if t.get("refusal"):
         st.error("🛡️ **Guardrail (read-only):** " + t["refusal"])
     tabs = st.tabs(["💬 Business answer", "👥 Multi-agent team", "📊 Evidence", "🔎 Trust details",

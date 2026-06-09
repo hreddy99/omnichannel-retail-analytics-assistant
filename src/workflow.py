@@ -408,7 +408,15 @@ def n_synthesize(state: WState) -> dict:
                  "seed, so magnitudes are illustrative. Read-only analysis; causality is labeled "
                  f"(likely driver / possible contributor), not proven. For context, {ctx}.")
     elif intent == "driver" and fb is not None:
-        if fb.driver in CORROBORATING_SET:
+        import re as _re
+        # Only frame the answer around the conversion drop if the question actually
+        # asks about conversion/contribution; otherwise answer from the domain's
+        # own perspective (e.g. "how did paid social perform?").
+        conversion_framed = bool(_re.search(r"conversion|contribut|decline", state["question"].lower()))
+        finding_lead = fb.finding[0].upper() + fb.finding[1:]
+        if not conversion_framed:
+            headline = f"{fb.label}: {finding_lead}"
+        elif fb.driver in CORROBORATING_SET:
             seen = fb.confidence != "pruned"
             headline = (f"{'Yes' if seen else 'No clear evidence'} — {fb.label} is a "
                         f"corroborating signal (not a direct cause) for yesterday's change.")
