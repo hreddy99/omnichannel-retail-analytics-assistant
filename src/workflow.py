@@ -22,6 +22,8 @@ from .audit import AuditLog
 class WState(TypedDict, total=False):
     question: str
     inject_failure: str | None  # demo: force one agent to fail
+    intent: str
+    focus: str | None
     con: Any
     g: Any
     meta: dict
@@ -64,18 +66,60 @@ RECOMMENDATIONS = {
 
 
 # --------------------------------------------------------------------------
+# Question intent classification - so the final answer is tuned to what was asked
+# (a "what actions?" question leads with actions; "did inventory contribute?"
+# answers yes/no for inventory; "show the definition" leads with grounding; etc.)
+# --------------------------------------------------------------------------
+_INTENT_LABEL = {
+    "actions": "recommended next actions",
+    "trust": "definition & evidence path",
+    "caveats": "caveats & data freshness",
+    "driver": "specific driver",
+    "overall": "overall conversion drop",
+}
+_FOCUS_PATTERNS = [
+    ("campaign_mix", r"channel|campaign|marketing|paid[ _]?social|traffic mix|\bads?\b|spend"),
+    ("inventory_availability", r"inventor|stock|stockout|availab|out of stock|sold out"),
+    ("fulfillment_constraints", r"fulfil|deliver|shipping|\bship\b|delay|fulfillment option|carrier|pickup"),
+    ("funnel_behavior", r"funnel|cart|checkout|abandon|on-?site|browse"),
+    ("service_signal", r"service|contact|support|complaint|\bcall(s|ed)?\b"),
+    ("finance_caveat", r"financ|revenue|\bnet\b|gross|reconcil|returns?|margin"),
+    ("vendor_insight", r"vendor|partner|supplier"),
+]
+
+
+def classify_intent(question: str):
+    """Return (intent, focus_driver_key|None) from the question wording."""
+    import re
+    q = question.lower()
+    if re.search(r"action|investigate next|what should|next step|recommend|what.* do\b", q):
+        return "actions", None
+    if re.search(r"definition|evidence path|show the|grounding|which definition|how did you", q):
+        return "trust", None
+    if re.search(r"caveat|freshness|trust this|trusting|limit|how confident|reliab|stale", q):
+        return "caveats", None
+    for key, pat in _FOCUS_PATTERNS:
+        if re.search(pat, q):
+            return "driver", key
+    return "overall", None
+
+
+# --------------------------------------------------------------------------
 # Nodes
 # --------------------------------------------------------------------------
 def n_classify(state: WState) -> dict:
     a: AuditLog = state["audit"]
     refusal = guardrails.refuse_write(state["question"])
+    intent, focus = classify_intent(state["question"])
+    focus_label = (catalog.get_driver(focus) or {}).get("label", focus) if focus else ""
+    detail = _INTENT_LABEL.get(intent, intent) + (f" → {focus_label}" if focus else "")
     a.event(workflow_node="classify", decision_type="question_classified",
             tool_name="LangGraph", input_summary=state["question"][:80],
-            output_summary="conversion investigation; metric=digital_conversion_rate",
-            user_visible_note="Classified as a digital conversion investigation.")
-    _step(state, "classify", "Classified as a digital conversion investigation "
+            output_summary=f"intent={intent}{('/'+focus) if focus else ''}; metric=digital_conversion_rate",
+            user_visible_note=f"Classified intent: {detail}.")
+    _step(state, "classify", f"Classified the question — intent: **{detail}** "
           "(metric=digital_conversion_rate, baseline=prior 7-day average).")
-    return {"refusal": refusal, "queries_used": 0}
+    return {"refusal": refusal, "queries_used": 0, "intent": intent, "focus": focus}
 
 
 def n_sync_gate(state: WState) -> dict:
@@ -261,40 +305,75 @@ def n_synthesize(state: WState) -> dict:
     a: AuditLog = state["audit"]
     bl = state["baseline"]
     beam, deferred, pruned = state["beam"], state["deferred"], state["pruned"]
+    intent = state.get("intent", "overall")
+    focus = state.get("focus")
     likely = [b for b in beam if b.confidence == "likely driver"]
     pct = bl["pct_change"]
-    headline = (f"Digital conversion fell {abs(pct):.0%} yesterday "
-                f"({bl['target']:.2%} vs {bl['baseline']:.2%} prior-7-day average).")
+    conf = guardrails.overall_confidence(len(likely))
+    ctx = (f"digital conversion fell {abs(pct):.0%} yesterday "
+           f"({bl['target']:.2%} vs {bl['baseline']:.2%} prior-7-day average)")
     drivers = [{"label": b.label, "confidence": b.confidence, "owner": b.owner,
                 "finding": b.finding, "score": b.total} for b in beam]
-    summary = llm.draft_summary(headline, drivers, guardrails.overall_confidence(len(likely)))
 
-    # action log + executive summary: owner-routed, ACTIONABLE recommendations
-    # (human-reviewed only; no operational writes). Beam drivers are prioritized to
-    # "act now"; qualified-but-deferred contributors to "investigate next".
+    # action log + recommendations (focus driver first when the question targets one)
+    ordered = beam + deferred
+    if focus:
+        ordered = sorted(ordered, key=lambda b: 0 if b.driver == focus else 1)
     recos = []
-    for b, pri in [(x, "high") for x in beam] + [(x, "medium") for x in deferred]:
+    for b in ordered:
+        pri = "high" if b in beam else "medium"
         action = RECOMMENDATIONS.get(b.driver, "Investigate and confirm with the owner before acting.")
         a.action(owner=b.owner, issue=b.label, evidence=b.finding, confidence=b.confidence,
                  priority=pri, next_step=action)
         recos.append({"owner": b.owner, "action": action, "priority": pri,
                       "confidence": b.confidence, "rationale": b.finding})
 
-    # Executive Summary Agent: leadership-level, action-first synthesis
-    bullets = [f"What changed: digital conversion {pct:+.0%} vs the prior-7-day baseline "
-               f"({bl['target']:.2%} vs {bl['baseline']:.2%})."]
+    # ---- headline + factual lead, TUNED to the question intent ----------
+    all_branches = beam + deferred + pruned
+    fb = next((b for b in all_branches if b.driver == focus), None) if focus else None
+    if intent == "actions":
+        headline = "Recommended next actions, routed to each owner."
+        facts = (f"For context, {ctx}. Prioritized actions: "
+                 + "; ".join(f"{r['owner']} — {r['action']}" for r in recos[:5]) + ".")
+    elif intent == "trust":
+        headline = "Definition and evidence path used for this answer."
+        facts = (catalog.get_metric("digital_conversion_rate")["definition"].strip()
+                 + f" Baseline = prior 7-day average; {ctx}. Drivers were validated against the "
+                 "YAML catalog and traced through the NetworkX graph — see Trust details for the "
+                 "retrieved context, graph path, and source versions.")
+    elif intent == "caveats":
+        headline = "Caveats and data-freshness limits for this result."
+        facts = ("Trust T-1 (yesterday); same-day data may be incomplete. Synthetic data with a fixed "
+                 "seed, so magnitudes are illustrative. Read-only analysis; causality is labeled "
+                 f"(likely driver / possible contributor), not proven. For context, {ctx}.")
+    elif intent == "driver" and fb is not None:
+        verdict = ({"likely driver": "Yes", "possible contributor": "Possibly"}
+                   .get(fb.confidence, "No clear evidence"))
+        phrase = ({"likely driver": "is a likely driver of",
+                   "possible contributor": "is a possible contributor to"}
+                  .get(fb.confidence, "shows no strong effect on"))
+        headline = f"{verdict} — {fb.label} {phrase} yesterday's conversion change."
+        facts = f"{fb.finding} (confidence: {fb.confidence}). For context, {ctx}."
+    else:  # overall
+        headline = (f"Digital conversion fell {abs(pct):.0%} yesterday "
+                    f"({bl['target']:.2%} vs {bl['baseline']:.2%} prior-7-day average).")
+        facts = (f"{ctx}. Likely drivers: "
+                 + "; ".join(f"{d['label']} ({d['confidence']})" for d in drivers) + ".")
+
+    summary = llm.draft_answer(state["question"], facts, conf)
+
+    # ---- executive summary (title reflects intent) ----------------------
+    es_title = ("Executive summary — recommended actions" if intent == "actions"
+                else "Executive summary")
+    bullets = [f"In answer to: \"{state['question']}\"", f"Context: {ctx}."]
     for r in recos:
         tag = "Act now" if r["priority"] == "high" else "Investigate next"
         bullets.append(f"{tag} — **{r['owner']}**: {r['action']} (basis: {r['rationale']})")
     if not recos:
         bullets.append("No driver cleared the evidence threshold; recommend the listed next checks.")
-    exec_summary = {
-        "title": "Executive summary — recommended actions",
-        "bullets": bullets,
-        "recommendations": recos,
-        "note": "Owner-routed recommendations from validated evidence; guarded language; "
-                "human-reviewed only, no operational writes.",
-    }
+    exec_summary = {"title": es_title, "bullets": bullets, "recommendations": recos,
+                    "note": "Owner-routed recommendations from validated evidence; guarded language; "
+                            "human-reviewed only, no operational writes."}
     a.event(workflow_node="executive_summary", decision_type="exec_summary_ready",
             tool_name="Executive Summary Agent",
             output_summary=f"{len(recos)} owner-routed recommendations",
@@ -302,7 +381,8 @@ def n_synthesize(state: WState) -> dict:
     _step(state, "executive summary", "Composed action-first recommendations routed to owners.")
 
     answer = {
-        "headline": headline, "summary": summary,
+        "headline": headline, "summary": summary, "intent": intent,
+        "conversion_context": ctx[0].upper() + ctx[1:] + ".",
         "definition": catalog.get_metric("digital_conversion_rate")["definition"].strip(),
         "drivers": drivers,
         "contributors": [{"label": b.label, "confidence": "possible contributor (outside beam)",
@@ -315,14 +395,14 @@ def n_synthesize(state: WState) -> dict:
         "caveats": ["Synthetic data with a fixed seed; magnitudes are illustrative.",
                     "Read-only analysis - no operational systems were modified.",
                     "Causality is labeled (likely driver / possible contributor); not proven."],
-        "confidence": guardrails.overall_confidence(len(likely)),
+        "confidence": conf,
         "llm_mode": llm.mode(),
         "exec_summary": exec_summary,
     }
     a.event(workflow_node="synthesize", decision_type="final_answer_ready", tool_name="Synthesis+LLM",
-            output_summary=headline[:70], score_or_confidence=answer["confidence"],
-            user_visible_note="Final grounded answer assembled with owner actions.")
-    _step(state, "synthesize", "Final grounded answer assembled (%s drafting)." % answer["llm_mode"])
+            output_summary=headline[:70], score_or_confidence=conf,
+            user_visible_note="Final grounded answer assembled, tuned to the question intent.")
+    _step(state, "synthesize", "Assembled the final answer tuned to the question (%s drafting)." % answer["llm_mode"])
     return {"answer": answer}
 
 

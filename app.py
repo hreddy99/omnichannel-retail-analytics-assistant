@@ -248,6 +248,10 @@ def _tab_business(t):
     st.markdown(f"**Confidence:** <span style='color:{conf_c}'>{a['confidence']}</span>  ·  "
                 f"*drafting: {a.get('llm_mode')}*", unsafe_allow_html=True)
     st.write(a["summary"])
+    # When the question is not about the overall drop, keep the conversion figure as
+    # context rather than the headline.
+    if a.get("intent") not in (None, "overall") and a.get("conversion_context"):
+        st.caption("Context: " + a["conversion_context"])
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Yesterday", f"{bl['target']:.2%}")
     m2.metric("Prior 7-day avg", f"{bl['baseline']:.2%}")
@@ -453,6 +457,7 @@ def page_demo():
             if kind == "step":
                 icon = "✅" if payload["ok"] else "⚠️"
                 st.write(f"{icon} **{payload['node']}** — {payload['detail']}")
+                status.update(label=f"Running… {payload['node']}")
             else:
                 t = payload
         status.update(label="Investigation complete", state="complete", expanded=False)
