@@ -308,17 +308,20 @@ SCENARIOS = [
 ]
 
 DEMO_QUESTIONS = [
+    # Flagship cross-domain investigation
     "Why did digital conversion drop yesterday compared with the prior 7-day average?",
-    "Which channels or campaigns contributed to the change?",
-    "Did inventory availability contribute to the conversion decline?",
-    "Did fulfillment delays or reduced fulfillment options contribute?",
-    "Were customers abandoning in the checkout funnel?",
-    "Did customer service contacts spike, and is it linked to the issue?",
-    "Which vendor or category partner should we alert about stockouts?",
-    "Why doesn't ecommerce sales match finance net revenue?",
-    "What actions should marketing, merchandising, or operations investigate next?",
-    "Show the retrieved definition and evidence path used for the answer.",
-    "What caveats or data freshness limits should I know before trusting this result?",
+    # Each functional analyst answering a realistic question from its own perspective
+    "Marketing: how did our paid social campaigns perform yesterday?",
+    "Merchandising: which categories had stockouts hurting availability yesterday?",
+    "Fulfillment: are delivery delays or reduced options worse in any region?",
+    "Digital Analytics: where are shoppers dropping off in the checkout funnel?",
+    "Customer Service: did support contacts spike yesterday, and why?",
+    "Merchandising: which vendor or category partner should we alert about stockouts?",
+    "Finance: why doesn't ecommerce sales match finance net revenue?",
+    # Cross-cutting
+    "What actions should each team take next?",
+    "Show the certified definition and evidence path behind this answer.",
+    "What caveats or data-freshness limits should I know before trusting this result?",
 ]
 
 # Functional requirements (id, requirement, priority, acceptance)
