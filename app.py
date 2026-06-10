@@ -14,7 +14,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from src import catalog, graph, guardrails, llm
+from src import catalog, graph, guardrails, insights, llm
 from src import plan_content as P
 from src import retrieval
 from src.investigation import BEAM_WIDTH, QUERY_BUDGET, run_investigation, run_investigation_stream
@@ -276,6 +276,18 @@ def _tab_business(t):
     if intent not in (None, "overall") and a.get("conversion_context"):
         st.caption("Context: " + a["conversion_context"])
 
+    if intent == "analytics":
+        mets = a.get("metrics", [])
+        if mets:
+            cols = st.columns(min(len(mets), 4))
+            for col, (label, val) in zip(cols, mets[:4]):
+                col.metric(str(label), str(val))
+        if a.get("table") is not None:
+            st.markdown("**Result (read-only DuckDB query):**")
+            st.dataframe(a["table"], width="stretch", hide_index=True)
+        st.info(f"**Owner:** {a.get('owner', '-')} · {a.get('recommendation', '')}")
+        return
+
     if intent == "overall":
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("Yesterday", f"{bl['target']:.2%}")
@@ -330,6 +342,13 @@ def _tab_business(t):
 def _tab_evidence(t):
     st.caption("Level 2 · Evidence summary — for analysts and managers")
     bl = t["baseline"]
+    if not bl:  # analytics question — no conversion baseline; show the result table
+        a = t["answer"]
+        if a.get("table") is not None:
+            st.dataframe(a["table"], width="stretch", hide_index=True)
+        with st.expander("Query (read-only, validated)"):
+            st.code(a.get("sql", ""), language="sql")
+        return
     series = bl["series"].copy()
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=series["date"], y=series["conversion"], mode="lines+markers",
@@ -422,10 +441,12 @@ def _tab_audit(t):
     cols = ["event_id", "workflow_node", "decision_type", "tool_name", "output_summary",
             "score_or_confidence", "status"]
     st.dataframe(pd.DataFrame(audit.events)[cols], width="stretch", hide_index=True)
-    with st.expander("Baseline SQL (read-only, validated)"):
-        ok, reason = guardrails.check_sql(t["baseline"]["sql"])
-        st.code(t["baseline"]["sql"], language="sql")
-        st.caption(("✅ " if ok else "⚠️ ") + reason)
+    sql = t["baseline"].get("sql") if t["baseline"] else t["answer"].get("sql")
+    if sql:
+        with st.expander("Primary SQL (read-only, validated)"):
+            ok, reason = guardrails.check_sql(sql)
+            st.code(sql, language="sql")
+            st.caption(("✅ " if ok else "⚠️ ") + reason)
 
 
 def _tab_actions(t):
@@ -483,8 +504,12 @@ def page_demo():
     probe = llm.probe()
     st.caption(f"LLM: {probe['detail']}")
 
-    options = P.DEMO_QUESTIONS + ["✍️ Custom question…"]
-    choice = st.selectbox("Pick a demo question", options, index=0)
+    options = (["— Conversion-drop investigation —"] + P.DEMO_QUESTIONS
+               + ["— Direct analytics questions —"] + insights.questions()
+               + ["✍️ Custom question…"])
+    choice = st.selectbox("Pick a demo question", options, index=1)
+    if choice.startswith("—"):  # a group separator was selected
+        choice = P.DEMO_QUESTIONS[0]
     question = st.text_input("Question", value="" if choice.startswith("✍️") else choice)
     fail_opts = {"(none)": None, "Marketing Analyst": "campaign_mix",
                  "Merchandising Analyst": "inventory_availability",
