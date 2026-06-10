@@ -240,23 +240,9 @@ def _scorecard(b):
                 unsafe_allow_html=True)
 
 
-def _tab_business(t):
-    a = t["answer"]; bl = t["baseline"]
-    st.markdown(f"### {a['headline']}")
-    st.caption("Level 1 · Business summary — for business users and leaders")
-    conf_c = "#16a34a" if a["confidence"] == "high" else "#d97706"
-    st.markdown(f"**Confidence:** <span style='color:{conf_c}'>{a['confidence']}</span>  ·  "
-                f"*drafting: {a.get('llm_mode')}*", unsafe_allow_html=True)
-    st.write(a["summary"])
-    # When the question is not about the overall drop, keep the conversion figure as
-    # context rather than the headline.
-    if a.get("intent") not in (None, "overall") and a.get("conversion_context"):
-        st.caption("Context: " + a["conversion_context"])
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Yesterday", f"{bl['target']:.2%}")
-    m2.metric("Prior 7-day avg", f"{bl['baseline']:.2%}")
-    m3.metric("Change", f"{bl['pct_change']:+.1%}")
-    m4.metric("Queries used", f"{t['queries_used']}/{QUERY_BUDGET}")
+def _driver_block(a):
+    """Render the cross-domain driver findings (used for the overall question and
+    inside an expander for focused questions)."""
     st.markdown("**Likely drivers (selected by beam search):**")
     for d in a["drivers"]:
         c = CONF_COLOR.get(d["confidence"], "#16a34a")
@@ -277,7 +263,62 @@ def _tab_business(t):
         st.markdown("**Pruned hypotheses:**")
         for p in a["pruned"]:
             st.markdown(f"- ~~{p['label']}~~ (score {p['score']}/14) — {p['reason']}")
-    st.info("**Recommendation:** " + a["recommendation"])
+
+
+def _tab_business(t):
+    a = t["answer"]; bl = t["baseline"]; intent = a.get("intent", "overall")
+    st.markdown(f"### {a['headline']}")
+    st.caption("Level 1 · Business summary — for business users and leaders")
+    conf_c = "#16a34a" if a["confidence"] == "high" else "#d97706"
+    st.markdown(f"**Confidence:** <span style='color:{conf_c}'>{a['confidence']}</span>  ·  "
+                f"*drafting: {a.get('llm_mode')}*", unsafe_allow_html=True)
+    st.write(a["summary"])
+    if intent not in (None, "overall") and a.get("conversion_context"):
+        st.caption("Context: " + a["conversion_context"])
+
+    if intent == "overall":
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Yesterday", f"{bl['target']:.2%}")
+        m2.metric("Prior 7-day avg", f"{bl['baseline']:.2%}")
+        m3.metric("Change", f"{bl['pct_change']:+.1%}")
+        m4.metric("Queries used", f"{t['queries_used']}/{QUERY_BUDGET}")
+        _driver_block(a)
+        st.info("**Recommendation:** " + a["recommendation"])
+
+    elif intent == "driver" and a.get("focus"):
+        f = a["focus"]
+        c = CONF_COLOR.get(f["confidence"], "#16a34a")
+        st.markdown(f"<div style='border-left:5px solid {c};padding:8px 14px;margin:6px 0;"
+                    f"background:#f0fdf4;border-radius:4px'><b>{f['label']}</b> → <b>{f['owner']}</b> · "
+                    f"<span style='color:{c}'>{f['confidence']}</span><br>"
+                    f"<span style='font-size:0.92em;color:#334155'>{f['finding']}</span></div>",
+                    unsafe_allow_html=True)
+        if f.get("evidence") is not None:
+            st.markdown("**Evidence (read-only DuckDB):**")
+            st.dataframe(f["evidence"], width="stretch", hide_index=True)
+        st.info(f"**Recommended action — {f['owner']}:** {f['action']}")
+        with st.expander("See the full cross-domain investigation"):
+            _driver_block(a)
+
+    elif intent == "actions":
+        st.markdown("**Recommended actions by owner:**")
+        rows = [{"owner": r["owner"], "priority": r["priority"], "action": r["action"],
+                 "basis": r["rationale"]} for r in a["exec_summary"]["recommendations"]]
+        if rows:
+            st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+        with st.expander("See the supporting driver findings"):
+            _driver_block(a)
+
+    elif intent == "trust":
+        st.markdown(f"**Certified metric definition:** {a['definition']}")
+        st.caption("Baseline rule: prior 7-day average. See the **Trust details** tab for retrieved "
+                   "context, graph path, catalog version/hash, and the active embedder.")
+
+    elif intent == "caveats":
+        st.markdown("**Caveats & data-freshness limits:**")
+        for cv in a["caveats"]:
+            st.markdown(f"- {cv}")
+
     es = a.get("exec_summary")
     if es:
         st.markdown(f"#### {es['title']}")

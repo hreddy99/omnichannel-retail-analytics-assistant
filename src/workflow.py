@@ -435,28 +435,55 @@ def n_synthesize(state: WState) -> dict:
                  + "; ".join(f"{d['label']} ({d['confidence']})" for d in drivers) + ".")
 
     summary = llm.draft_answer(state["question"], facts, conf)
+    defn = catalog.get_metric("digital_conversion_rate")["definition"].strip()
+    base_caveats = ["Synthetic data with a fixed seed; magnitudes are illustrative.",
+                    "Read-only analysis - no operational systems were modified.",
+                    "Causality is labeled (likely driver / possible contributor); not proven."]
 
-    # ---- executive summary (title reflects intent) ----------------------
-    es_title = ("Executive summary — recommended actions" if intent == "actions"
-                else "Executive summary")
-    bullets = [f"In answer to: \"{state['question']}\"", f"Context: {ctx}."]
+    # ---- focus block (the analyst the question is about) ----------------
+    focus_block = None
+    if intent == "driver" and fb is not None:
+        focus_block = {"label": fb.label, "owner": fb.owner, "confidence": fb.confidence,
+                       "finding": fb.finding, "action": RECOMMENDATIONS.get(fb.driver, ""),
+                       "evidence": fb.evidence}
+
+    # ---- executive summary, TAILORED to the question ---------------------
     _tag = {"high": "Act now", "medium": "Investigate next", "monitor": "Monitor (corroborating)"}
-    for r in recos:
-        tag = _tag.get(r["priority"], "Investigate next")
-        bullets.append(f"{tag} — **{r['owner']}**: {r['action']} (basis: {r['rationale']})")
-    if not recos:
-        bullets.append("No driver cleared the evidence threshold; recommend the listed next checks.")
+    if intent == "driver" and fb is not None:
+        es_title = f"Summary — {fb.label}"
+        bullets = [f"Finding: {fb.finding}",
+                   f"Recommended action — **{fb.owner}**: {RECOMMENDATIONS.get(fb.driver, '')}",
+                   f"Confidence: {fb.confidence}. Context: {ctx}."]
+    elif intent == "trust":
+        es_title = "Grounding"
+        bullets = [f"Certified definition: {defn}", "Baseline rule: prior 7-day average.",
+                   "Validated against YAML and traced through the NetworkX graph; see Trust details "
+                   "for retrieved chunks, the graph path, and source versions."]
+    elif intent == "caveats":
+        es_title = "Caveats & data freshness"
+        bullets = ["Trust T-1 (yesterday); same-day (T-0) data may be incomplete."] + base_caveats
+    elif intent == "actions":
+        es_title = "Recommended actions"
+        bullets = [f"Context: {ctx}."] + [
+            f"{_tag.get(r['priority'], 'Investigate next')} — **{r['owner']}**: {r['action']} "
+            f"(basis: {r['rationale']})" for r in recos]
+    else:  # overall
+        es_title = "Executive summary"
+        bullets = [f"Context: {ctx}."] + [
+            f"{_tag.get(r['priority'], 'Investigate next')} — **{r['owner']}**: {r['action']} "
+            f"(basis: {r['rationale']})" for r in recos]
+    if not bullets:
+        bullets = ["No driver cleared the evidence threshold; recommend the listed next checks."]
     exec_summary = {"title": es_title, "bullets": bullets, "recommendations": recos,
                     "note": "Owner-routed recommendations from validated evidence; guarded language; "
                             "human-reviewed only, no operational writes."}
     a.event(workflow_node="executive_summary", decision_type="exec_summary_ready",
-            tool_name="Executive Summary Agent",
-            output_summary=f"{len(recos)} owner-routed recommendations",
-            user_visible_note="Executive summary with recommended actions composed.")
-    _step(state, "executive summary", "Composed action-first recommendations routed to owners.")
+            tool_name="Executive Summary Agent", output_summary=f"intent={intent}",
+            user_visible_note="Question-specific summary composed.")
+    _step(state, "executive summary", f"Composed a {intent}-specific summary.")
 
     answer = {
-        "headline": headline, "summary": summary, "intent": intent,
+        "headline": headline, "summary": summary, "intent": intent, "focus": focus_block,
         "conversion_context": ctx[0].upper() + ctx[1:] + ".",
         "definition": catalog.get_metric("digital_conversion_rate")["definition"].strip(),
         "drivers": drivers,
