@@ -15,7 +15,7 @@ from typing import Any, TypedDict
 import pandas as pd
 from langgraph.graph import END, START, StateGraph
 
-from . import agents, catalog, graph, guardrails, llm, tot
+from . import agents, catalog, graph, guardrails, insights, llm, tot
 from .audit import AuditLog
 
 
@@ -125,6 +125,18 @@ def classify_intent(question: str):
 def n_classify(state: WState) -> dict:
     a: AuditLog = state["audit"]
     refusal = guardrails.refuse_write(state["question"])
+    # Standalone analytics question (not the conversion-drop investigation)?
+    insight_id = insights.match(state["question"])
+    if insight_id:
+        ins = insights.get(insight_id)
+        a.event(workflow_node="classify", decision_type="question_classified",
+                tool_name="LangGraph", input_summary=state["question"][:80],
+                output_summary=f"intent=analytics/{insight_id} (owner {ins.owner})",
+                user_visible_note=f"Classified as a direct analytics question → {ins.owner}.")
+        _step(state, "classify", f"Classified as a **direct analytics question** "
+              f"({ins.domain} · {ins.owner}) — answered by one governed read-only query, "
+              "not the conversion-drop investigation.")
+        return {"refusal": refusal, "queries_used": 0, "intent": "analytics", "focus": insight_id}
     intent, focus = classify_intent(state["question"])
     focus_label = (catalog.get_driver(focus) or {}).get("label", focus) if focus else ""
     detail = _INTENT_LABEL.get(intent, intent) + (f" → {focus_label}" if focus else "")
@@ -509,19 +521,69 @@ def n_synthesize(state: WState) -> dict:
     return {"answer": answer}
 
 
+def n_analytics(state: WState) -> dict:
+    """Direct governed analytics query (a standalone insight, not the conversion
+    investigation). Validate SQL -> run read-only DuckDB -> summarize with numbers."""
+    a: AuditLog = state["audit"]
+    con = state["con"]
+    ins = insights.get(state["focus"])
+    _step(state, "semantic lookup", f"Resolved insight '{ins.id}' (owner {ins.owner}); "
+          "answered from approved tables only.")
+    sql = ins.sql.format(td=state["meta"]["target_day"],
+                         l7=state["meta"]["target_day"], b0=state["meta"]["baseline_start"],
+                         b1=state["meta"]["baseline_end"])
+    ok, reason = guardrails.check_sql(sql)
+    _step(state, "SQL validate", reason, ok)
+    a.event(workflow_node="sql_validate", decision_type="sql_checked", tool_name="SQL validator",
+            output_summary=reason, status="success" if ok else "blocked")
+    if not ok:
+        return {"answer": {"intent": "analytics", "headline": "Query blocked by guardrail",
+                           "summary": reason, "confidence": "n/a", "llm_mode": llm.mode(),
+                           "metrics": [], "table": None, "owner": ins.owner, "sql": sql},
+                "queries_used": 1}
+    res = insights.run(ins.id, con, state["meta"])
+    a.event(workflow_node="sql_execute", decision_type="insight_computed", tool_name="DuckDB",
+            input_summary=ins.id, output_summary=res["headline"][:70],
+            user_visible_note=res["headline"])
+    _step(state, "DuckDB execute", f"{res['headline']}")
+    summary = llm.draft_answer(state["question"], res["summary"], "informational")
+    _step(state, "summarize", f"Composed analytics answer for {ins.owner}.")
+    answer = {"intent": "analytics", "headline": res["headline"], "summary": summary,
+              "confidence": "informational", "llm_mode": llm.mode(),
+              "metrics": res["metrics"], "table": res["table"], "owner": ins.owner,
+              "domain": ins.domain, "sql": sql,
+              "definition": "Direct governed analytics query over approved tables.",
+              "drivers": [], "contributors": [], "corroborating": [], "pruned": [],
+              "degraded": [], "caveats": ["Synthetic data with a fixed seed; illustrative magnitudes.",
+                                          "Read-only analysis over governed tables."],
+              "exec_summary": None, "focus": None,
+              "recommendation": f"Route to {ins.owner} for review; no operational writes."}
+    a.event(workflow_node="synthesize", decision_type="final_answer_ready", tool_name="Synthesis",
+            output_summary=res["headline"][:70], user_visible_note="Analytics answer assembled.")
+    return {"answer": answer, "queries_used": 1}
+
+
 # --------------------------------------------------------------------------
 # Graph assembly
 # --------------------------------------------------------------------------
 def build_workflow():
     sg = StateGraph(WState)
-    nodes = [("classify", n_classify), ("sync_gate", n_sync_gate), ("retrieve", n_retrieve),
-             ("validate", n_validate), ("relate", n_relate), ("baseline", n_baseline),
-             ("tot_gate", n_tot_gate), ("dispatch", n_dispatch), ("critic", n_critic),
-             ("evidence_gate", n_evidence_gate), ("synthesize", n_synthesize)]
-    for name, fn in nodes:
+    # Investigation chain (conversion-drop path)
+    chain = [("sync_gate", n_sync_gate), ("retrieve", n_retrieve), ("validate", n_validate),
+             ("relate", n_relate), ("baseline", n_baseline), ("tot_gate", n_tot_gate),
+             ("dispatch", n_dispatch), ("critic", n_critic), ("evidence_gate", n_evidence_gate),
+             ("synthesize", n_synthesize)]
+    sg.add_node("classify", n_classify)
+    sg.add_node("analytics", n_analytics)
+    for name, fn in chain:
         sg.add_node(name, fn)
     sg.add_edge(START, "classify")
-    for (a, _), (b, _) in zip(nodes, nodes[1:]):
+    # Route: analytics question -> direct insight node; otherwise the investigation.
+    sg.add_conditional_edges(
+        "classify", lambda s: "analytics" if s.get("intent") == "analytics" else "sync_gate",
+        {"analytics": "analytics", "sync_gate": "sync_gate"})
+    sg.add_edge("analytics", END)
+    for (a, _), (b, _) in zip(chain, chain[1:]):
         sg.add_edge(a, b)
     sg.add_edge("synthesize", END)
     return sg.compile()
