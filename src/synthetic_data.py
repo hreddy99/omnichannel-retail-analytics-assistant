@@ -22,6 +22,7 @@ import pandas as pd
 from faker import Faker
 
 SEED = 42
+RAMP_DAYS = 10                # gentle operational-degradation window before "yesterday"
 BASELINE_DAYS = 40            # >= 30-45 baseline days (Plan 14.1) ...
 N_DAYS = BASELINE_DAYS + 1    # ... plus one seeded "yesterday"
 TODAY = dt.date(2026, 6, 7)
@@ -123,6 +124,10 @@ def generate(seed: int = SEED) -> dict[str, pd.DataFrame]:
     for d in dates:
         is_t = d == target_day
         n = int(rng.normal(4000, 150))
+        # Gentle degradation ramp over the last RAMP_DAYS (0 early, ~1 by yesterday)
+        # for operational metrics, so trend/anomaly/risk themes have real signal.
+        days_to_t = (target_day - d).days
+        ramp = max(0.0, (RAMP_DAYS - days_to_t) / RAMP_DAYS) if days_to_t <= RAMP_DAYS else 0.0
 
         # ---- channel assignment (scenario 2: paid_social share spikes) ----
         shares = dict(BASE_SHARE)
@@ -207,6 +212,9 @@ def generate(seed: int = SEED) -> dict[str, pd.DataFrame]:
         for cid in CAT_IDS:
             views = int(rng.normal(5200, 280))
             stockout = float(rng.uniform(0.02, 0.06))
+            # affected category drifts up gently over the ramp window
+            if cid == SCEN["inventory_category"]:
+                stockout += 0.10 * ramp
             if is_t and cid == SCEN["inventory_category"]:
                 views = int(views * 1.4); stockout = float(rng.uniform(0.34, 0.44))
             inv_rows.append({"date": d, "category_id": cid, "product_views": views,
@@ -219,6 +227,10 @@ def generate(seed: int = SEED) -> dict[str, pd.DataFrame]:
                 promise = float(rng.uniform(2.0, 3.0))
                 actual = promise + float(rng.uniform(0.2, 1.2))
                 options = int(rng.integers(4, 6)); cancels = int(rng.normal(12, 4))
+                # affected region's delay/cancellations creep up over the ramp window
+                if reg == SCEN["fulfillment_region"]:
+                    actual += 1.5 * ramp
+                    cancels += int(15 * ramp)
                 if is_t and reg == SCEN["fulfillment_region"]:
                     actual = promise + float(rng.uniform(3.5, 5.0))
                     options = int(rng.integers(1, 3)); cancels = int(rng.normal(40, 6))
@@ -239,8 +251,8 @@ def generate(seed: int = SEED) -> dict[str, pd.DataFrame]:
                              "adjustments": round(adj, 2),
                              "net_revenue": round(gross - returns + tax + shipping + adj, 2)})
 
-        # ---- customer contacts (light; small spike on target/west) ----
-        base_contacts = int(rng.normal(60, 10))
+        # ---- customer contacts (light; rising over the ramp, spike on target) ----
+        base_contacts = int(rng.normal(60, 10) * (1 + 0.5 * ramp))
         if is_t:
             base_contacts = int(base_contacts * 1.5)
         for _ in range(max(base_contacts, 0)):

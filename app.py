@@ -14,7 +14,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from src import catalog, graph, guardrails, insights, llm
+from src import catalog, charts, graph, guardrails, insights, llm, themes
 from src import plan_content as P
 from src import retrieval
 from src.investigation import BEAM_WIDTH, QUERY_BUDGET, run_investigation, run_investigation_stream
@@ -28,6 +28,44 @@ CONF_COLOR = {"likely driver": "#16a34a", "possible contributor": "#d97706",
 
 def _table(rows, cols):
     st.dataframe(pd.DataFrame(rows, columns=cols), width="stretch", hide_index=True)
+
+
+_CCY = ("sales", "revenue", "gross", "net", "spend", "returns", "amount", "impact")
+
+
+def _col_fmt(name, s):
+    """Return a pandas format string/callable for a column based on its name/values."""
+    n = str(name).lower()
+    try:
+        kind = s.dtype.kind
+    except Exception:
+        kind = "O"
+    if kind not in "if":
+        return None
+    if any(k in n for k in ("price", "order_value", "aov")):
+        return "${:,.2f}"
+    if any(k in n for k in _CCY) and "rate" not in n and "pct" not in n:
+        return "${:,.0f}"
+    if any(k in n for k in ("pct", "rate", "share", "conv")):
+        mx = float(s.dropna().abs().max()) if len(s.dropna()) else 0.0
+        return (lambda v: f"{v * 100:.1f}%") if mx <= 1.5 else "{:.1f}%"
+    if any(k in n for k in ("delay", "days", "option")):
+        return "{:.2f}"
+    if kind == "i":
+        return "{:,.0f}"
+    return "{:,.2f}"
+
+
+def show_df(df):
+    """Render a DataFrame with proper currency/decimal/percent formatting."""
+    if df is None or len(df) == 0:
+        st.caption("No rows.")
+        return
+    fmt = {c: f for c in df.columns if (f := _col_fmt(c, df[c])) is not None}
+    try:
+        st.dataframe(df.style.format(fmt), width="stretch", hide_index=True)
+    except Exception:
+        st.dataframe(df, width="stretch", hide_index=True)
 
 
 @st.cache_resource(show_spinner="Building local vector index (ChromaDB)…")
@@ -167,7 +205,7 @@ def page_architecture():
     st.subheader("Knowledge graph generated from the YAML catalog (NetworkX)")
     st.caption(f"Live render of the catalog (v{catalog.version()}, hash {catalog.content_hash()}). "
                "metric → driver → table / system / owner.")
-    st.plotly_chart(_graph_figure(), width="stretch")
+    st.plotly_chart(_graph_figure(), width="stretch", key="arch_graph")
     col1, col2 = st.columns(2)
     with col1:
         st.subheader("YAML catalog files")
@@ -276,15 +314,18 @@ def _tab_business(t):
     if intent not in (None, "overall") and a.get("conversion_context"):
         st.caption("Context: " + a["conversion_context"])
 
-    if intent == "analytics":
-        mets = a.get("metrics", [])
+    if intent in ("analytics", "themed"):
+        mets = a.get("metrics") or a.get("signals", [])
         if mets:
             cols = st.columns(min(len(mets), 4))
             for col, (label, val) in zip(cols, mets[:4]):
                 col.metric(str(label), str(val))
+        fig = charts.evidence_figure(t)
+        if fig is not None:
+            st.plotly_chart(fig, width="stretch", key="biz_main_chart")
         if a.get("table") is not None:
             st.markdown("**Result (read-only DuckDB query):**")
-            st.dataframe(a["table"], width="stretch", hide_index=True)
+            show_df(a["table"])
         st.info(f"**Owner:** {a.get('owner', '-')} · {a.get('recommendation', '')}")
         return
 
@@ -305,9 +346,12 @@ def _tab_business(t):
                     f"<span style='color:{c}'>{f['confidence']}</span><br>"
                     f"<span style='font-size:0.92em;color:#334155'>{f['finding']}</span></div>",
                     unsafe_allow_html=True)
+        fig = charts.evidence_figure(t)
+        if fig is not None:
+            st.plotly_chart(fig, width="stretch", key="biz_focus_chart")
         if f.get("evidence") is not None:
             st.markdown("**Evidence (read-only DuckDB):**")
-            st.dataframe(f["evidence"], width="stretch", hide_index=True)
+            show_df(f["evidence"])
         st.info(f"**Recommended action — {f['owner']}:** {f['action']}")
         with st.expander("See the full cross-domain investigation"):
             _driver_block(a)
@@ -317,7 +361,7 @@ def _tab_business(t):
         rows = [{"owner": r["owner"], "priority": r["priority"], "action": r["action"],
                  "basis": r["rationale"]} for r in a["exec_summary"]["recommendations"]]
         if rows:
-            st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+            show_df(pd.DataFrame(rows))
         with st.expander("See the supporting driver findings"):
             _driver_block(a)
 
@@ -341,31 +385,25 @@ def _tab_business(t):
 
 def _tab_evidence(t):
     st.caption("Level 2 · Evidence summary — for analysts and managers")
-    bl = t["baseline"]
-    if not bl:  # analytics question — no conversion baseline; show the result table
-        a = t["answer"]
+    a = t["answer"]
+    # Chart matched to the question (conversion only for the overall question).
+    fig = charts.evidence_figure(t)
+    if fig is not None:
+        st.plotly_chart(fig, width="stretch", key="evidence_chart")
+    if a.get("intent") in ("analytics", "themed"):
         if a.get("table") is not None:
-            st.dataframe(a["table"], width="stretch", hide_index=True)
-        with st.expander("Query (read-only, validated)"):
-            st.code(a.get("sql", ""), language="sql")
+            show_df(a["table"])
+        if a.get("sql"):
+            with st.expander("Query (read-only, validated)"):
+                st.code(a["sql"], language="sql")
         return
-    series = bl["series"].copy()
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=series["date"], y=series["conversion"], mode="lines+markers",
-                             name="daily conversion", line=dict(color="#2563eb")))
-    fig.add_hline(y=bl["baseline"], line_dash="dash", line_color="#94a3b8",
-                  annotation_text="prior 7-day avg")
-    fig.add_trace(go.Scatter(x=[series["date"].iloc[-1]], y=[bl["target"]], mode="markers",
-                             marker=dict(size=14, color="#dc2626"), name="yesterday"))
-    fig.update_layout(height=300, margin=dict(l=10, r=10, t=30, b=10), yaxis_tickformat=".1%",
-                      plot_bgcolor="white", title="Digital conversion: daily vs prior 7-day average")
-    st.plotly_chart(fig, width="stretch")
-    st.markdown("**Per-driver evidence (read-only DuckDB):**")
-    for b in t["depth1"]:
-        if b.evidence is None:
-            continue
-        with st.expander(f"{b.label} — evidence ({b.confidence})"):
-            st.dataframe(b.evidence, width="stretch", hide_index=True)
+    if t.get("depth1"):
+        st.markdown("**Per-driver evidence (read-only DuckDB):**")
+        for b in t["depth1"]:
+            if b.evidence is None:
+                continue
+            with st.expander(f"{b.label} — evidence ({b.confidence})"):
+                show_df(b.evidence)
 
 
 def _tab_trust(t):
@@ -386,7 +424,7 @@ def _tab_trust(t):
                  "owner": r["metadata"].get("owner"), "version": r["metadata"].get("version"),
                  "validated_vs_yaml": r["validated"], "distance": round(r["distance"], 3)}
                 for r in t["retrieval"]]
-        st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+        show_df(pd.DataFrame(rows))
     st.markdown("**Graph path (NetworkX):**")
     g = graph.build_graph()
     for b in t["beam"]:
@@ -453,7 +491,7 @@ def _tab_actions(t):
     st.caption("Action log — human-reviewed recommendations only; no operational writes")
     actions = t["audit"].actions
     if actions:
-        st.dataframe(pd.DataFrame(actions), width="stretch", hide_index=True)
+        show_df(pd.DataFrame(actions))
     st.warning("Recommended actions are for human review only. The assistant never writes to "
                "ERP, OMS, CRM, pricing, inventory, campaign, fulfillment, service, or finance systems.")
 
@@ -506,6 +544,7 @@ def page_demo():
 
     options = (["— Conversion-drop investigation —"] + P.DEMO_QUESTIONS
                + ["— Direct analytics questions —"] + insights.questions()
+               + ["— Themed reviews (health / trend / risk) —"] + themes.questions()
                + ["✍️ Custom question…"])
     choice = st.selectbox("Pick a demo question", options, index=1)
     if choice.startswith("—"):  # a group separator was selected
@@ -603,14 +642,93 @@ def page_interactive_plan():
 
 
 # ==========================================================================
+# PAGE: Diagrams
+# ==========================================================================
+def page_diagrams():
+    from src import diagrams
+    st.title("🗺️ Architecture & Flow Diagrams")
+    st.caption("Architecture, business, tool, reasoning, multi-agent, and data-model flows.")
+    for title, desc, dot in diagrams.DIAGRAMS:
+        st.subheader(title)
+        st.caption(desc)
+        st.graphviz_chart(dot, use_container_width=True)
+        st.divider()
+
+
+# ==========================================================================
+# PAGE: Data Catalog
+# ==========================================================================
+def page_catalog():
+    st.title("📚 Data Catalog")
+    st.caption(f"Governed source of truth · v{catalog.version()} · hash {catalog.content_hash()}")
+    cat = catalog.load_catalog()
+    tab1, tab2, tab3, tab4 = st.tabs(["Metrics", "Tables", "Drivers", "Lineage"])
+    with tab1:
+        rows = [{"metric": k, "label": m.get("label"), "domain": m.get("domain"), "owner": m.get("owner"),
+                 "grain": m.get("grain"), "tables": ", ".join(m.get("approved_tables", [])),
+                 "definition": (m.get("definition") or "").strip()} for k, m in cat["metrics"].items()]
+        _table(rows, ["metric", "label", "domain", "owner", "grain", "tables", "definition"])
+    with tab2:
+        rows = [{"table": k, "grain": tb.get("grain"), "owner": tb.get("owner"),
+                 "columns": ", ".join(tb.get("columns", [])),
+                 "joins": ", ".join(tb.get("allowed_joins", [])),
+                 "approved_use": tb.get("approved_use")} for k, tb in cat["tables"].items()]
+        _table(rows, ["table", "grain", "owner", "columns", "joins", "approved_use"])
+    with tab3:
+        rows = [{"driver": k, "label": d.get("label"), "domain": d.get("domain"), "owner": d.get("owner"),
+                 "metric": d.get("metric"), "tables": ", ".join(d.get("tables", [])),
+                 "hypothesis": d.get("hypothesis")} for k, d in cat["drivers"].items()]
+        _table(rows, ["driver", "label", "domain", "owner", "metric", "tables", "hypothesis"])
+    with tab4:
+        st.caption("metric → driver → table / system / owner (generated from YAML).")
+        st.plotly_chart(_graph_figure(), width="stretch", key="catalog_graph")
+
+
+# ==========================================================================
+# PAGE: Evaluation
+# ==========================================================================
+@st.cache_data(show_spinner="Running checks…")
+def _eval_results():
+    from src import data_validation
+    from src.workflow import classify_intent
+    rows = list(data_validation.run_checks())
+    # classification routing checks
+    expected = ([(q, "overall" if i == 0 else "driver") for i, q in enumerate(P.DEMO_QUESTIONS[:8])]
+                + [(q, "analytics") for q in insights.questions()]
+                + [(q, "themed") for q in themes.questions()])
+    ok = 0
+    for q, exp in expected:
+        got = "analytics" if insights.match(q) else "themed" if themes.match(q) else classify_intent(q)[0]
+        ok += int(got == exp or (exp == "driver" and got in ("driver", "actions", "trust", "caveats")))
+    rows.append({"check": "Question routing (intent classification)", "ok": ok == len(expected),
+                 "detail": f"{ok}/{len(expected)} questions routed to the expected path"})
+    return rows
+
+
+def page_evaluation():
+    st.title("🧪 Evaluation")
+    st.caption("Automated checks that the synthetic data, guardrails, and routing behave as designed.")
+    rows = _eval_results()
+    passed = sum(r["ok"] for r in rows)
+    c1, c2 = st.columns(2)
+    c1.metric("Checks passed", f"{passed}/{len(rows)}")
+    c2.metric("Status", "✅ All passing" if passed == len(rows) else "⚠️ Review")
+    df = pd.DataFrame([{"": "✅" if r["ok"] else "⚠️", "check": r["check"], "detail": r["detail"]} for r in rows])
+    st.dataframe(df, width="stretch", hide_index=True)
+
+
+# ==========================================================================
 # Navigation
 # ==========================================================================
 PAGES = {
     "🏠 Overview": page_overview,
     "✅ Feasibility Review": page_feasibility,
     "🏗️ Architecture": page_architecture,
+    "📐 Flow Diagrams": page_diagrams,
+    "📚 Data Catalog": page_catalog,
     "🗺️ Step-by-Step Plan": page_plan,
     "🔬 Live Demo": page_demo,
+    "🧪 Evaluation": page_evaluation,
     "📄 Interactive Plan": page_interactive_plan,
 }
 
