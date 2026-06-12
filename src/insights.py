@@ -191,6 +191,21 @@ INSIGHTS = [
             "GROUP BY c.category_name ORDER BY avg_stockout_pct DESC", _stockout_cat),
 ]
 
+# chart spec per insight (column names match each query's output)
+CHART_SPECS = {
+    "top_categories_7d": {"kind": "bar", "x": "category_name", "y": "sales", "title": "Sales by category (last 7 days)"},
+    "best_channel": {"kind": "bar", "x": "channel", "y": "conv_pct", "title": "Conversion % by channel"},
+    "return_rate_cat": {"kind": "bar", "x": "category_name", "y": "return_rate_pct", "title": "Return rate % by category"},
+    "slowest_regions": {"kind": "bar", "x": "region", "y": "avg_delay_days", "title": "Avg delivery delay (days) by region"},
+    "contact_reasons": {"kind": "bar", "x": "reason_code", "y": "contacts", "title": "Contacts by reason"},
+    "campaign_spend": {"kind": "bar", "x": "campaign_name", "y": "spend", "title": "Campaign spend"},
+    "atc_device": {"kind": "bar", "x": "device", "y": "add_to_cart_rate_pct", "title": "Add-to-cart rate % by device"},
+    "top_vendors": {"kind": "bar", "x": "vendor_id", "y": "revenue", "title": "Revenue by vendor"},
+    "net_trend": {"kind": "line", "x": "week", "y": "net_revenue", "title": "Net revenue by week"},
+    "aov_channel": {"kind": "bar", "x": "channel", "y": "avg_order_value", "title": "Average order value by channel"},
+    "stockout_cat": {"kind": "bar", "x": "category_name", "y": "avg_stockout_pct", "title": "Avg stockout % by category"},
+}
+
 _BY_ID = {i.id: i for i in INSIGHTS}
 _BY_Q = {i.question.lower(): i for i in INSIGHTS}
 
@@ -215,5 +230,5 @@ def run(insight_id: str, con, meta: dict) -> dict:
     df = con.execute(sql).df()
     out = ins.summarize(df)
     out.update({"id": ins.id, "question": ins.question, "owner": ins.owner,
-                "domain": ins.domain, "sql": sql, "table": df})
+                "domain": ins.domain, "sql": sql, "table": df, "chart": CHART_SPECS.get(ins.id)})
     return out

@@ -15,7 +15,7 @@ from typing import Any, TypedDict
 import pandas as pd
 from langgraph.graph import END, START, StateGraph
 
-from . import agents, catalog, graph, guardrails, insights, llm, tot
+from . import agents, catalog, graph, guardrails, insights, llm, themes, tot
 from .audit import AuditLog
 
 
@@ -137,6 +137,15 @@ def n_classify(state: WState) -> dict:
               f"({ins.domain} · {ins.owner}) — answered by one governed read-only query, "
               "not the conversion-drop investigation.")
         return {"refusal": refusal, "queries_used": 0, "intent": "analytics", "focus": insight_id}
+    theme_id = themes.match(state["question"])
+    if theme_id:
+        th = themes.get(theme_id)
+        a.event(workflow_node="classify", decision_type="question_classified", tool_name="LangGraph",
+                input_summary=state["question"][:80], output_summary=f"intent=themed/{theme_id}",
+                user_visible_note=f"Classified as a themed review → {th.owner}.")
+        _step(state, "classify", f"Classified as a **themed review** ({th.domain} · {th.owner}) — "
+              "a multi-signal investigation, not the conversion-drop path.")
+        return {"refusal": refusal, "queries_used": 0, "intent": "themed", "focus": theme_id}
     intent, focus = classify_intent(state["question"])
     focus_label = (catalog.get_driver(focus) or {}).get("label", focus) if focus else ""
     detail = _INTENT_LABEL.get(intent, intent) + (f" → {focus_label}" if focus else "")
@@ -455,9 +464,9 @@ def n_synthesize(state: WState) -> dict:
     # ---- focus block (the analyst the question is about) ----------------
     focus_block = None
     if intent == "driver" and fb is not None:
-        focus_block = {"label": fb.label, "owner": fb.owner, "confidence": fb.confidence,
-                       "finding": fb.finding, "action": RECOMMENDATIONS.get(fb.driver, ""),
-                       "evidence": fb.evidence}
+        focus_block = {"key": fb.driver, "label": fb.label, "owner": fb.owner,
+                       "confidence": fb.confidence, "finding": fb.finding,
+                       "action": RECOMMENDATIONS.get(fb.driver, ""), "evidence": fb.evidence}
 
     # ---- executive summary, TAILORED to the question ---------------------
     _tag = {"high": "Act now", "medium": "Investigate next", "monitor": "Monitor (corroborating)"}
@@ -553,6 +562,7 @@ def n_analytics(state: WState) -> dict:
               "metrics": res["metrics"], "table": res["table"], "owner": ins.owner,
               "domain": ins.domain, "sql": sql,
               "definition": "Direct governed analytics query over approved tables.",
+              "chart": res.get("chart"),
               "drivers": [], "contributors": [], "corroborating": [], "pruned": [],
               "degraded": [], "caveats": ["Synthetic data with a fixed seed; illustrative magnitudes.",
                                           "Read-only analysis over governed tables."],
@@ -560,6 +570,33 @@ def n_analytics(state: WState) -> dict:
               "recommendation": f"Route to {ins.owner} for review; no operational writes."}
     a.event(workflow_node="synthesize", decision_type="final_answer_ready", tool_name="Synthesis",
             output_summary=res["headline"][:70], user_visible_note="Analytics answer assembled.")
+    return {"answer": answer, "queries_used": 1}
+
+
+def n_themed(state: WState) -> dict:
+    """Themed multi-signal review (health check / trend / risk). Runs 2-3 read-only
+    governed queries and returns a narrative + signals + a relevant chart."""
+    a: AuditLog = state["audit"]
+    con = state["con"]
+    th = themes.get(state["focus"])
+    _step(state, "semantic lookup", f"Resolved themed review '{th.id}' (owner {th.owner}).")
+    _step(state, "DuckDB execute", "Running the themed review's governed read-only queries…")
+    res = themes.run(th.id, con, state["meta"])
+    a.event(workflow_node="sql_execute", decision_type="theme_computed", tool_name="DuckDB",
+            input_summary=th.id, output_summary=res["headline"][:70], user_visible_note=res["headline"])
+    summary = llm.draft_answer(state["question"], res["summary"], "informational")
+    _step(state, "summarize", f"Composed themed review for {th.owner}.")
+    answer = {"intent": "themed", "headline": res["headline"], "summary": summary,
+              "confidence": "informational", "llm_mode": llm.mode(), "owner": th.owner,
+              "domain": th.domain, "signals": res.get("signals", []), "table": res.get("table"),
+              "chart": res.get("chart"), "recommendation": res.get("recommendation", ""),
+              "definition": "Themed multi-signal review over governed tables.",
+              "drivers": [], "contributors": [], "corroborating": [], "pruned": [], "degraded": [],
+              "caveats": ["Synthetic data with a fixed seed; illustrative magnitudes.",
+                          "Read-only analysis over governed tables."],
+              "exec_summary": None, "focus": None, "metrics": res.get("signals", [])}
+    a.event(workflow_node="synthesize", decision_type="final_answer_ready", tool_name="Synthesis",
+            output_summary=res["headline"][:70], user_visible_note="Themed review assembled.")
     return {"answer": answer, "queries_used": 1}
 
 
@@ -575,14 +612,17 @@ def build_workflow():
              ("synthesize", n_synthesize)]
     sg.add_node("classify", n_classify)
     sg.add_node("analytics", n_analytics)
+    sg.add_node("themed", n_themed)
     for name, fn in chain:
         sg.add_node(name, fn)
     sg.add_edge(START, "classify")
-    # Route: analytics question -> direct insight node; otherwise the investigation.
-    sg.add_conditional_edges(
-        "classify", lambda s: "analytics" if s.get("intent") == "analytics" else "sync_gate",
-        {"analytics": "analytics", "sync_gate": "sync_gate"})
+    # Route: analytics/themed questions -> their direct node; otherwise the investigation.
+    def _route(s):
+        return {"analytics": "analytics", "themed": "themed"}.get(s.get("intent"), "sync_gate")
+    sg.add_conditional_edges("classify", _route,
+                             {"analytics": "analytics", "themed": "themed", "sync_gate": "sync_gate"})
     sg.add_edge("analytics", END)
+    sg.add_edge("themed", END)
     for (a, _), (b, _) in zip(chain, chain[1:]):
         sg.add_edge(a, b)
     sg.add_edge("synthesize", END)
