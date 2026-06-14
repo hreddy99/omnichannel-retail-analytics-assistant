@@ -99,7 +99,58 @@ digraph G {
 }
 """
 
+REFERENCE_ARCHITECTURE = """
+digraph G {
+  rankdir=TB; compound=true; node [shape=box style="rounded,filled" fontname="Helvetica" fontsize=9];
+  subgraph cluster1 { label="1 · User & Interaction"; style=filled; color="#eff6ff";
+    l1 [label="Business users (Merchandising, Marketing, Fulfillment, Finance,\\nCustomer Service, Category Partners, Leadership)\\n→ Streamlit UI: answer · evidence · trust · debug trace · action log" fillcolor="#dbeafe"]; }
+  subgraph cluster2 { label="2 · Orchestration & Reasoning"; style=filled; color="#ecfdf5";
+    l2a [label="Analytics Orchestrator (LangGraph)\\nstate machine · routing · query budget · stopping · synthesis" fillcolor="#bbf7d0"];
+    l2b [label="Reasoning: ReAct loop · conditional ToT beam search ·\\nevidence gate · source-conflict · confidence · human-in-the-loop" fillcolor="#d1fae5"]; }
+  subgraph cluster3 { label="3 · Specialized agent team"; style=filled; color="#f5f3ff";
+    l3 [label="Semantic · Graph · SQL Analyst · Critic · Synthesis  +  domain analysts:\\nMarketing · Merchandising · Fulfillment · Digital Analytics ·\\nCustomer Service · Finance · Vendor/Category" fillcolor="#ede9fe"]; }
+  subgraph cluster4 { label="4 · Knowledge, memory & tooling"; style=filled; color="#fffbeb";
+    l4 [label="YAML catalog (source of truth) · ChromaDB + sentence-transformers (RAG) ·\\nNetworkX graph · Ollama (optional) · SQL validator / guardrails · audit + action log" fillcolor="#fef3c7"]; }
+  subgraph cluster5 { label="5 · Data layer — DuckDB (read-only, synthetic)"; style=filled; color="#eef2ff";
+    l5 [label="fact_sessions · fact_events · fact_orders · fact_order_items · fact_inventory_daily ·\\nfact_fulfillment · fact_customer_contacts · fact_finance_daily · dim_product/category/campaign" fillcolor="#e0e7ff"]; }
+  subgraph cluster6 { label="6 · Outputs / decision support"; style=filled; color="#ecfdf5";
+    l6 [label="Evidence-backed answer · caveats & freshness · confidence ·\\nowner-routed recommendations · executive summary" fillcolor="#bbf7d0"]; }
+  subgraph cluster7 { label="7 · Safety & governance"; style=filled; color="#fef2f2";
+    l7 [label="Read-only · no writes to ERP/OMS/CRM/etc · SELECT-only ·\\nYAML certified definitions · labeled causality · freshness disclosed" fillcolor="#fee2e2"]; }
+  l1 -> l2a; l2a -> l2b [style=dashed]; l2a -> l3; l3 -> l4; l4 -> l5 [label="validated SELECT" fontsize=8];
+  l3 -> l6 [ltail=cluster3 lhead=cluster6]; l2a -> l6 [constraint=false];
+  l7 -> l2a [style=dashed dir=none label="governs" fontsize=8 constraint=false];
+}
+"""
+
+AGENT_DELEGATION = """
+digraph G {
+  rankdir=LR; node [shape=box style="rounded,filled" fontname="Helvetica" fontsize=10];
+  orch [label="ORCHESTRATOR\\n(main thread)" fillcolor="#ede9fe" color="#7c3aed" penwidth=2];
+  node [fillcolor="#dcfce7"];
+  m  [label="marketing-analyst\\ntools: DuckDB, YAML, SQL validator"];
+  me [label="merchandising-analyst\\ntools: DuckDB, YAML, SQL validator"];
+  fu [label="fulfillment-analyst\\ntools: DuckDB, YAML, SQL validator"];
+  da [label="digital-analytics-analyst\\ntools: DuckDB, YAML, SQL validator"];
+  cs [label="customer-service-analyst\\ntools: DuckDB, YAML, SQL validator"];
+  fi [label="finance-analyst\\ntools: DuckDB, YAML, SQL validator"];
+  ve [label="vendor-analyst\\ntools: DuckDB, YAML, SQL validator"];
+  critic [label="critic / evaluator\\nscore · prune · beam" fillcolor="#fde68a"];
+  syn [label="synthesis +\\nexecutive summary" fillcolor="#dbeafe"];
+  orch -> m; orch -> me; orch -> fu; orch -> da; orch -> cs; orch -> fi; orch -> ve;
+  m -> critic; me -> critic; fu -> critic; da -> critic; cs -> critic; fi -> critic; ve -> critic;
+  critic -> syn;
+  label="Each analyst runs in its own context with a scoped, read-only toolset — keeps the main thread clean.";
+  labelloc=b; fontsize=9; fontname="Helvetica";
+}
+"""
+
 DIAGRAMS = [
+    ("Reference architecture (7 layers)",
+     "User & interaction → orchestration/reasoning → specialized agents → knowledge/tooling → "
+     "data → outputs, with safety & governance across all of it.", REFERENCE_ARCHITECTURE),
+    ("Agent delegation", "The Orchestrator delegates to specialized analysts, each with a scoped "
+     "read-only toolset and its own context; the Critic ranks and Synthesis composes.", AGENT_DELEGATION),
     ("System architecture", "How the layers fit together; YAML governs truth, the LLM never does.", ARCHITECTURE),
     ("Business flow", "From a natural-language question to a human-reviewed, owner-routed recommendation.", BUSINESS_FLOW),
     ("Tool flow", "The order tools are called within a governed investigation.", TOOL_FLOW),

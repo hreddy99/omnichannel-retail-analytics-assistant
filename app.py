@@ -14,7 +14,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from src import catalog, charts, graph, guardrails, insights, llm, themes
+from src import agent_specs, catalog, charts, graph, guardrails, insights, llm, themes
 from src import plan_content as P
 from src import retrieval
 from src.investigation import BEAM_WIDTH, QUERY_BUDGET, run_investigation, run_investigation_stream
@@ -649,13 +649,43 @@ def page_interactive_plan():
 # ==========================================================================
 def page_diagrams():
     from src import diagrams
-    st.title("🗺️ Architecture & Flow Diagrams")
-    st.caption("Architecture, business, tool, reasoning, multi-agent, and data-model flows.")
+    st.title("📐 Architecture, Agents & Skills")
+    st.caption("Full reference architecture, agent delegation, and the flow diagrams; "
+               "plus the agent and skill definitions that document the system.")
+
+    st.header("Flow diagrams")
     for title, desc, dot in diagrams.DIAGRAMS:
         st.subheader(title)
         st.caption(desc)
         st.graphviz_chart(dot, use_container_width=True)
         st.divider()
+
+    st.header("Agent definitions")
+    st.caption("Each specialized analyst is defined as a markdown file in `agents/` with "
+               "`name` / `description` / `tools` frontmatter + instructions (the "
+               "`.claude/agents/<name>.md` convention). See AGENTS.md for the roster.")
+    for a in agent_specs.load_specs():
+        with st.expander(f"🤖 {a.get('name')} — {a.get('description', '')}"):
+            tools = a.get("tools")
+            tools = ", ".join(tools) if isinstance(tools, list) else (tools or "—")
+            st.markdown(f"**Owner:** {a.get('owner','—')}  ·  **Domain:** {a.get('domain','—')}  "
+                        f"·  **Governed driver:** `{a.get('governed_driver','—')}`  "
+                        f"·  **Metric:** `{a.get('metric','—')}`")
+            st.markdown(f"**Tools:** {tools}")
+            tbls = a.get("tables") or []
+            st.markdown("**Tables:** " + (", ".join(f"`{t}`" for t in tbls) if tbls else "—"))
+            st.caption(f"`{a.get('file')}`")
+            st.markdown(a.get("prompt", ""))
+
+    st.header("Skills")
+    st.caption("Reusable know-how follows the skill anatomy: a folder with `SKILL.md` "
+               "(`name` + `description` frontmatter + instructions) plus optional `scripts/` "
+               "and `reference/`. Only the frontmatter is always loaded — the instructions "
+               "load on demand (progressive disclosure).")
+    for s in agent_specs.load_skills():
+        with st.expander(f"🧠 {s['name']} — {s['description']}"):
+            st.code(f"{s['folder']}/\n" + "\n".join(f"  {f}" for f in s["files"]), language="text")
+            st.markdown(s["instructions"])
 
 
 # ==========================================================================
@@ -727,7 +757,7 @@ PAGES = {
     "🏠 Overview": page_overview,
     "✅ Feasibility Review": page_feasibility,
     "🏗️ Architecture": page_architecture,
-    "📐 Flow Diagrams": page_diagrams,
+    "📐 Architecture, Agents & Skills": page_diagrams,
     "📚 Data Catalog": page_catalog,
     "🗺️ Step-by-Step Plan": page_plan,
     "🔬 Live Demo": page_demo,
