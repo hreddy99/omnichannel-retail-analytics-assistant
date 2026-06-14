@@ -267,7 +267,10 @@ TOT_THRESHOLDS = (
     "Below 7: prune branch or label inconclusive. 7-9: possible contributor (secondary "
     "finding with caveat). 10+: likely driver if evidence is consistent and source checks "
     "pass. Ties: prefer stronger DuckDB evidence, fewer caveats, fresher data, clearer "
-    "owner action. Beam width 2. Query budget: 1 baseline + up to 3 driver-path + 1 follow-up."
+    "owner action. Beam width 2. Query budget: 1 baseline + up to 3 driver-path + 1 follow-up. "
+    "Defense-in-depth: DuckDB evidence strength only counts when the structural checks "
+    "(metric + graph + SQL safety) clear a minimum bar, so strong evidence cannot override "
+    "governance checks that signal problems."
 )
 
 # Source-conflict rules (situation, decision, behavior)

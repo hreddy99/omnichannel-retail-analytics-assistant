@@ -447,6 +447,9 @@ def _tab_tot(t):
         with st.expander(f"Score breakdown & SQL — {b.label}"):
             st.dataframe(pd.DataFrame([{"criterion": k, "score": v} for k, v in b.scores.items()]),
                          width="stretch", hide_index=True)
+            if getattr(b, "evidence_gated", False):
+                st.caption("⚠ Evidence strength gated to 0 — structural checks (metric+graph+SQL) "
+                           "scored below the threshold, so strong evidence cannot carry this branch.")
             if b.sql:
                 st.code(b.sql, language="sql")
     if t["deferred"]:

@@ -25,6 +25,11 @@ QUERY_BUDGET = 1 + DRIVER_PATH_BUDGET + FOLLOWUP_BUDGET   # 1 baseline + 3 + 1 =
 PRIMARY_DRIVERS = ["campaign_mix", "inventory_availability", "fulfillment_constraints"]
 RESERVE_DRIVER = "funnel_behavior"
 
+# Evidence strength (0-3, the heaviest dimension) only counts when the structural
+# checks (metric + graph + SQL safety, max 6) clear this bar. This stops strong
+# DuckDB evidence from overriding governance checks that signal problems.
+STRUCTURAL_MIN = 4
+
 
 @dataclass
 class Branch:
@@ -41,6 +46,7 @@ class Branch:
     confidence: str = ""
     sub_drivers: list = field(default_factory=list)
     governed: bool = True
+    evidence_gated: bool = False
 
 
 def _rel_score(rel: float) -> int:
@@ -219,11 +225,22 @@ def score_branch(b: Branch, g, fresh_ok: bool) -> Branch:
     has_rows = b.evidence is not None and len(b.evidence) > 0
     material = abs(b.signal) >= 0.10
 
+    # Structural backbone (metric + graph + SQL safety). Evidence strength is only
+    # allowed to count if these governance checks clear STRUCTURAL_MIN, so strong
+    # DuckDB evidence cannot override checks that signal problems.
+    metric_pts = 2 if metric_ok else 0
+    graph_pts = 2 if gpath else 0
+    sql_pts = 2 if sql_ok else 0
+    structural = metric_pts + graph_pts + sql_pts
+    raw_evidence = _rel_score(b.signal)
+    evidence_pts = raw_evidence if structural >= STRUCTURAL_MIN else 0
+    b.evidence_gated = raw_evidence > 0 and evidence_pts == 0
+
     b.scores = {
-        "metric_validated_yaml": 2 if metric_ok else 0,                 # 0-2
-        "approved_graph_path": 2 if gpath else 0,                       # 0-2
-        "sql_safety_template": 2 if sql_ok else 0,                      # 0-2
-        "duckdb_evidence_strength": _rel_score(b.signal),              # 0-3
+        "metric_validated_yaml": metric_pts,                            # 0-2
+        "approved_graph_path": graph_pts,                               # 0-2
+        "sql_safety_template": sql_pts,                                 # 0-2
+        "duckdb_evidence_strength": evidence_pts,                      # 0-3 (gated)
         "freshness_row_quality": 2 if (fresh_ok and has_rows and material) else 0,  # 0-2
         "business_relevance_owner": (2 if abs(b.signal) >= 0.25 else 1 if material else 0)
                                     if b.owner else 0,                  # 0-2
