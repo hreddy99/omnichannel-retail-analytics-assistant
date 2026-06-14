@@ -321,17 +321,20 @@ def n_critic(state: WState) -> dict:
         b.sql, b.evidence, b.signal, b.finding = r.sql, r.evidence, r.signal, r.finding
         tot.score_branch(b, g, fresh_ok)
         sc = b.scores
+        gated = " ⚠ evidence gated (structural < %d)" % tot.STRUCTURAL_MIN if b.evidence_gated else ""
         _step(state, f"thought · {b.label}", f"hypothesis — {b.hypothesis}")
         _step(state, f"critic · {b.label}",
-              "score %d/14 (%s) [metric%d graph%d sql%d evidence%d fresh%d biz%d caveat%d]" % (
+              "score %d/14 (%s) [metric%d graph%d sql%d evidence%d fresh%d biz%d caveat%d]%s" % (
                   b.total, b.confidence, sc["metric_validated_yaml"], sc["approved_graph_path"],
                   sc["sql_safety_template"], sc["duckdb_evidence_strength"], sc["freshness_row_quality"],
-                  sc["business_relevance_owner"], sc["caveats_manageable"]),
+                  sc["business_relevance_owner"], sc["caveats_manageable"], gated),
               b.confidence != "pruned")
         a.event(workflow_node="critic", decision_type="branch_scored", tool_name="Critic/Evaluator",
                 input_summary=f"agent={r.agent_name}", output_summary=r.finding[:70],
                 score_or_confidence=f"{b.total}/14 ({b.confidence})",
-                user_visible_note=f"{b.label}: {b.confidence} (score {b.total}/14).")
+                status="caveated" if b.evidence_gated else "success",
+                user_visible_note=f"{b.label}: {b.confidence} (score {b.total}/14)."
+                                  + (" Evidence gated by structural check." if b.evidence_gated else ""))
         branches.append(b)
 
     branches.sort(key=lambda x: (x.total, abs(x.signal)), reverse=True)
