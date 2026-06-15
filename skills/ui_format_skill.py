@@ -84,6 +84,17 @@ def _driver_fig(focus_key, ev):
     return None
 
 
+def _bridge(df, title):
+    """Gross-to-net bridge: gross, the bridge components, then net (one-row df)."""
+    r = df.iloc[0]
+    labels = ["gross", "returns", "tax", "shipping", "adjustments", "net"]
+    vals = [float(r.gross), float(r.returns_total), float(r.tax),
+            float(r.shipping), float(r.adjustments), float(r.net)]
+    colors = [_BLUE, _RED, _RED, _RED, _GREY, _GREEN]
+    fig = go.Figure(go.Bar(x=labels, y=vals, marker_color=colors))
+    return _layout(fig, title)
+
+
 def from_spec(df, spec):
     """Build a fig from a chart spec dict: {kind, x, y, title, pct?}."""
     if df is None or spec is None or len(df) == 0:
@@ -96,6 +107,8 @@ def from_spec(df, spec):
             return _line(df, spec["x"], spec["y"], title, pct=pct)
         if kind == "grouped":
             return _grouped(df, spec["x"], spec["series"], title, pct=pct)
+        if kind == "bridge":
+            return _bridge(df, title)
         return _bar(df, spec["x"], spec["y"], title, pct=pct)
     except Exception:
         return None

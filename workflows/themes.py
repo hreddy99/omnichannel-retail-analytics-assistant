@@ -3,7 +3,8 @@ Themed reviews — cross-functional investigations that are neither the conversi
 drop investigation nor single-metric lookups. A mix of health checks, week-over-week
 trend/anomaly reviews, and forward-looking risk watch-outs. Each runs 2-3 read-only
 governed queries and returns a headline, signal numbers, a relevant chart spec, a
-table, and an owner-routed recommendation.
+table, and an owner-routed recommendation. Several exercise the Phase II/III tables
+(fact_campaign_daily, fact_margin_proxy_daily, fact_vendor_scorecard, dim_region).
 """
 from __future__ import annotations
 
@@ -42,13 +43,14 @@ def _exec_briefing(con, meta):
     fin = _q(con, f"SELECT round(sum(net_revenue),0) net, round(sum(gross_sales),0) gross, "
              f"round(sum(returns),0) ret FROM fact_finance_daily WHERE date=DATE '{w['td']}'")
     con_t = _q(con, f"SELECT count(*) c FROM fact_customer_contacts WHERE date=DATE '{w['td']}'")
-    ful = _q(con, f"SELECT region, round(avg(delay_days),2) d FROM fact_fulfillment "
-             f"WHERE date=DATE '{w['td']}' GROUP BY region ORDER BY d DESC LIMIT 1")
+    ful = _q(con, f"SELECT f.region, g.carrier_group, round(avg(f.delay_days),2) d FROM fact_fulfillment f "
+             f"JOIN dim_region g USING(region) WHERE f.date=DATE '{w['td']}' "
+             f"GROUP BY f.region, g.carrier_group ORDER BY d DESC LIMIT 1")
     convy = float(conv.iloc[-1].conv_pct); f = fin.iloc[0]; fr = ful.iloc[0]
     return {"headline": f"Daily executive briefing for {w['td']}.",
             "summary": f"Conversion {convy:.2f}%; net revenue ${f.net:,.0f} (gross ${f.gross:,.0f}, "
                        f"returns ${f.ret:,.0f}); {int(con_t.iloc[0].c):,} support contacts; "
-                       f"slowest region {fr.region} at {fr.d:.1f}d delay.",
+                       f"slowest region {fr.region} ({fr.carrier_group}) at {fr.d:.1f}d delay.",
             "signals": [("Conversion", f"{convy:.2f}%"), ("Net revenue", f"${f.net:,.0f}"),
                         ("Support contacts", f"{int(con_t.iloc[0].c):,}"),
                         ("Slowest region", f"{fr.region} ({fr.d:.1f}d)")],
@@ -61,8 +63,10 @@ def _cx_health(con, meta):
     w = _win(meta)
     daily = _q(con, f"SELECT date, count(*) contacts FROM fact_customer_contacts "
                f"WHERE date BETWEEN DATE '{w['l14']}' AND DATE '{w['td']}' GROUP BY date ORDER BY date")
-    mix = _q(con, f"SELECT reason_code, count(*) contacts FROM fact_customer_contacts "
-             f"WHERE date BETWEEN DATE '{w['l7']}' AND DATE '{w['td']}' GROUP BY reason_code ORDER BY contacts DESC")
+    mix = _q(con, f"SELECT r.reason_group, count(*) contacts FROM fact_customer_contacts f "
+             f"JOIN dim_contact_reason r USING(reason_code) "
+             f"WHERE f.date BETWEEN DATE '{w['l7']}' AND DATE '{w['td']}' GROUP BY r.reason_group "
+             f"ORDER BY contacts DESC")
     last7 = float(daily[daily.date.astype(str) >= w['l7']].contacts.mean())
     prior = float(daily[daily.date.astype(str) < w['l7']].contacts.mean()) or 1.0
     chg = (last7 - prior) / prior
@@ -70,24 +74,27 @@ def _cx_health(con, meta):
     return {"headline": f"Customer-experience health: contacts {'up' if chg>=0 else 'down'} "
                         f"{abs(chg):.0%} week-over-week.",
             "summary": f"Contacts averaged {last7:.0f}/day last 7 days vs {prior:.0f}/day before "
-                       f"({chg:+.0%}). Top reason: {top.reason_code} ({int(top.contacts):,}).",
+                       f"({chg:+.0%}). Top reason group: {top.reason_group} ({int(top.contacts):,}).",
             "signals": [("Contacts/day (7d)", f"{last7:.0f}"), ("WoW change", f"{chg:+.0%}"),
-                        ("Top reason", str(top.reason_code))],
+                        ("Top reason group", str(top.reason_group))],
             "chart": {"kind": "line", "x": "date", "y": "contacts",
                       "title": "Customer contacts per day — last 14 days"},
-            "table": daily, "recommendation": "Customer Service: staff to the rising reason; link to fulfillment."}
+            "table": daily, "recommendation": "Customer Service: staff to the rising reason group; link to fulfillment."}
 
 
 def _fulfillment_review(con, meta):
     w = _win(meta)
-    byreg = _q(con, f"SELECT region, round(avg(delay_days),2) avg_delay_days, "
-               f"round(avg(options_available),1) avg_options, sum(cancellations) cancellations "
-               f"FROM fact_fulfillment WHERE date BETWEEN DATE '{w['l14']}' AND DATE '{w['td']}' "
-               f"GROUP BY region ORDER BY avg_delay_days DESC")
+    byreg = _q(con, f"SELECT f.region, g.carrier_group, round(avg(f.delay_days),2) avg_delay_days, "
+               f"round(avg(f.options_available),1) avg_options, sum(f.cancellations) cancellations "
+               f"FROM fact_fulfillment f JOIN dim_region g USING(region) "
+               f"WHERE f.date BETWEEN DATE '{w['l14']}' AND DATE '{w['td']}' "
+               f"GROUP BY f.region, g.carrier_group ORDER BY avg_delay_days DESC")
     t = byreg.iloc[0]
-    return {"headline": f"Fulfillment review (2 weeks): {t.region} slowest at {t.avg_delay_days:.2f}d.",
-            "summary": f"{t.region} averages {t.avg_delay_days:.2f}d delay with {t.avg_options:.1f} options "
-                       f"and {int(t.cancellations):,} cancellations over the last 2 weeks.",
+    return {"headline": f"Fulfillment review (2 weeks): {t.region} slowest at {t.avg_delay_days:.2f}d "
+                        f"({t.carrier_group}).",
+            "summary": f"{t.region} (carrier {t.carrier_group}) averages {t.avg_delay_days:.2f}d delay "
+                       f"with {t.avg_options:.1f} options and {int(t.cancellations):,} cancellations "
+                       f"over the last 2 weeks.",
             "signals": [("Slowest region", str(t.region)), ("Avg delay", f"{t.avg_delay_days:.2f}d"),
                         ("Cancellations", f"{int(t.cancellations):,}")],
             "chart": {"kind": "bar", "x": "region", "y": "avg_delay_days",
@@ -96,36 +103,50 @@ def _fulfillment_review(con, meta):
 
 
 def _marketing_efficiency(con, meta):
-    bych = _q(con, "SELECT channel, count(*) sessions, "
-              "round(sum(CASE WHEN converted THEN 1 ELSE 0 END)*100.0/count(*),2) conv_pct "
-              "FROM fact_sessions GROUP BY channel ORDER BY conv_pct DESC")
+    bych = _q(con, "SELECT channel, round(sum(spend),0) spend, sum(sessions)::BIGINT sessions, "
+              "sum(orders)::BIGINT orders, "
+              "round(sum(orders)*100.0/nullif(sum(sessions),0),2) conv_pct, "
+              "round(sum(spend)/nullif(sum(orders),0),2) cost_per_order "
+              "FROM fact_campaign_daily GROUP BY channel ORDER BY conv_pct DESC")
     best, worst = bych.iloc[0], bych.iloc[-1]
-    return {"headline": f"Marketing efficiency: {best.channel} best ({best.conv_pct:.2f}%), "
-                        f"{worst.channel} weakest ({worst.conv_pct:.2f}%).",
-            "summary": f"Conversion by channel across the period; {best.channel} leads at "
-                       f"{best.conv_pct:.2f}% over {int(best.sessions):,} sessions.",
+    tot_spend = float(bych.spend.sum()); tot_orders = int(bych.orders.sum())
+    return {"headline": f"Marketing efficiency: {best.channel} best at {best.conv_pct:.2f}% "
+                        f"(${best.cost_per_order:,.2f}/order); {worst.channel} weakest "
+                        f"({worst.conv_pct:.2f}%).",
+            "summary": f"Across campaigns, ${tot_spend:,.0f} spend drove {int(bych.sessions.sum()):,} "
+                       f"sessions and {tot_orders:,} orders. {best.channel} converts best at "
+                       f"{best.conv_pct:.2f}% (${best.cost_per_order:,.2f} per order); "
+                       f"{worst.channel} is weakest at {worst.conv_pct:.2f}%.",
             "signals": [("Best channel", f"{best.channel} {best.conv_pct:.2f}%"),
+                        ("Best cost/order", f"${best.cost_per_order:,.2f}"),
                         ("Weakest", f"{worst.channel} {worst.conv_pct:.2f}%")],
-            "chart": {"kind": "bar", "x": "channel", "y": "conv_pct",
-                      "title": "Conversion % by channel (period)"},
-            "table": bych, "recommendation": "Marketing: shift budget toward higher-converting channels."}
+            "chart": {"kind": "grouped", "x": "channel",
+                      "series": [("sessions", "sessions", "#94a3b8"), ("orders", "orders", "#2563eb")],
+                      "title": "Sessions vs orders by channel (campaigns)"},
+            "table": bych, "recommendation": "Marketing: shift budget toward the lower cost-per-order channel."}
 
 
 def _revenue_quality(con, meta):
-    wk = _q(con, "SELECT date_trunc('week', date) AS wk, round(sum(gross_sales),0) gross_sales, "
+    wk = _q(con, "WITH f AS (SELECT date_trunc('week', date) AS wk, round(sum(gross_sales),0) gross_sales, "
             "round(sum(net_revenue),0) net_revenue, round(sum(returns),0) AS returns_total "
-            "FROM fact_finance_daily GROUP BY wk ORDER BY wk")
+            "FROM fact_finance_daily GROUP BY wk), "
+            "m AS (SELECT date_trunc('week', date) AS wk, round(avg(margin_proxy)*100,1) margin_pct "
+            "FROM fact_margin_proxy_daily GROUP BY wk) "
+            "SELECT f.wk, f.gross_sales, f.net_revenue, f.returns_total, m.margin_pct "
+            "FROM f JOIN m USING(wk) ORDER BY f.wk")
     last = wk.iloc[-1]
     ratio = last.net_revenue / last.gross_sales if last.gross_sales else 0
-    return {"headline": f"Revenue quality: net is {ratio:.0%} of gross in the latest week.",
+    return {"headline": f"Revenue quality: net is {ratio:.0%} of gross with a "
+                        f"{last.margin_pct:.1f}% margin proxy in the latest week.",
             "summary": f"Latest week net ${last.net_revenue:,.0f} on gross ${last.gross_sales:,.0f} "
-                       f"(returns ${last.returns_total:,.0f}).",
+                       f"(returns ${last.returns_total:,.0f}); blended margin proxy {last.margin_pct:.1f}%.",
             "signals": [("Net/gross", f"{ratio:.0%}"), ("Net (latest wk)", f"${last.net_revenue:,.0f}"),
-                        ("Returns (latest wk)", f"${last.returns_total:,.0f}")],
+                        ("Returns (latest wk)", f"${last.returns_total:,.0f}"),
+                        ("Margin proxy", f"{last.margin_pct:.1f}%")],
             "chart": {"kind": "grouped", "x": "wk",
                       "series": [("gross", "gross_sales", "#2563eb"), ("net", "net_revenue", "#16a34a")],
                       "title": "Gross vs net revenue by week"},
-            "table": wk, "recommendation": "Finance: reconcile gross-to-net; watch the returns trend."}
+            "table": wk, "recommendation": "Finance: reconcile gross-to-net; watch returns and the margin proxy."}
 
 
 # ---- Trend / anomaly -----------------------------------------------------
@@ -154,14 +175,14 @@ def _trending_worse(con, meta):
              f"SELECT avg(stockout_rate)*100 FROM fact_inventory_daily WHERE date BETWEEN DATE '{w['p7s']}' AND DATE '{w['p7e']}'",
              "Avg stockout %"),
         _wow(con, meta,
-             f"SELECT avg(CASE WHEN returned THEN 1.0 ELSE 0 END)*100 FROM fact_orders WHERE date BETWEEN DATE '{w['l7']}' AND DATE '{w['td']}'",
-             f"SELECT avg(CASE WHEN returned THEN 1.0 ELSE 0 END)*100 FROM fact_orders WHERE date BETWEEN DATE '{w['p7s']}' AND DATE '{w['p7e']}'",
-             "Return rate %"),
+             f"SELECT count(*) FROM fact_returns WHERE return_date BETWEEN DATE '{w['l7']}' AND DATE '{w['td']}'",
+             f"SELECT count(*) FROM fact_returns WHERE return_date BETWEEN DATE '{w['p7s']}' AND DATE '{w['p7e']}'",
+             "Returns (count)"),
     ]
     df = pd.DataFrame(rows).sort_values("change_pct", ascending=False)
     worst = df.iloc[0]
     return {"headline": f"Trending worse: {worst.metric} {worst.change_pct:+.1f}% week-over-week.",
-            "summary": f"{worst.metric} rose from {worst.prior_7d} to {worst.last_7d} "
+            "summary": f"{worst.metric} moved from {worst.prior_7d} to {worst.last_7d} "
                        f"({worst.change_pct:+.1f}%) vs the prior week — the largest deterioration.",
             "signals": [(r.metric, f"{r.change_pct:+.1f}%") for r in df.itertuples()],
             "chart": {"kind": "bar", "x": "metric", "y": "change_pct",
@@ -224,17 +245,18 @@ def _stockout_risk(con, meta):
 
 def _fulfillment_risk(con, meta):
     w = _win(meta)
-    df = _q(con, f"""SELECT region,
+    df = _q(con, f"""SELECT f.region, g.carrier_group,
         round(avg(CASE WHEN date BETWEEN DATE '{w['l7']}' AND DATE '{w['td']}' THEN delay_days END),2) last7_delay,
         round(avg(CASE WHEN date BETWEEN DATE '{w['p7s']}' AND DATE '{w['p7e']}' THEN delay_days END),2) prior7_delay,
         round(avg(CASE WHEN date BETWEEN DATE '{w['l7']}' AND DATE '{w['td']}' THEN options_available END),1) avg_options
-        FROM fact_fulfillment GROUP BY region ORDER BY last7_delay DESC""")
+        FROM fact_fulfillment f JOIN dim_region g USING(region)
+        GROUP BY f.region, g.carrier_group ORDER BY last7_delay DESC""")
     df["delta_days"] = (df.last7_delay - df.prior7_delay).round(2)
     t = df.iloc[0]
     return {"headline": f"Fulfillment risk: {t.region} delay {t.last7_delay:.2f}d "
-                        f"({t.delta_days:+.2f}d WoW, {t.avg_options:.1f} options).",
-            "summary": f"{t.region} has the highest recent delay ({t.last7_delay:.2f}d) and "
-                       f"{t.avg_options:.1f} options on average.",
+                        f"({t.delta_days:+.2f}d WoW, carrier {t.carrier_group}).",
+            "summary": f"{t.region} (carrier {t.carrier_group}) has the highest recent delay "
+                       f"({t.last7_delay:.2f}d) with {t.avg_options:.1f} options on average.",
             "signals": [("At-risk region", str(t.region)), ("Delay", f"{t.last7_delay:.2f}d"),
                         ("WoW", f"{t.delta_days:+.2f}d")],
             "chart": {"kind": "bar", "x": "region", "y": "last7_delay",
@@ -260,29 +282,59 @@ def _cx_risk(con, meta):
             "table": df, "recommendation": "Customer Service: pre-empt the rising region; link to operations."}
 
 
+def _vendor_risk(con, meta):
+    w = _win(meta)
+    df = _q(con, f"""SELECT s.vendor_id, any_value(v.vendor_name) vendor_name,
+        round(sum(s.lost_sales_proxy),0) lost_sales,
+        round(avg(s.stockout_impact)*100,1) stockout_impact_pct,
+        round(avg(s.return_rate)*100,1) return_rate_pct, sum(s.service_issues)::BIGINT service_issues
+        FROM fact_vendor_scorecard s JOIN dim_vendor v USING(vendor_id)
+        WHERE s.date BETWEEN DATE '{w['l7']}' AND DATE '{w['td']}'
+        GROUP BY s.vendor_id ORDER BY lost_sales DESC""")
+    t = df.iloc[0]
+    return {"headline": f"Vendor risk watch: {t.vendor_name} ({t.vendor_id}) — "
+                        f"${t.lost_sales:,.0f} lost-sales proxy (7d).",
+            "summary": f"Over the last 7 days, {t.vendor_name} ({t.vendor_id}) tops the watch list with "
+                       f"${t.lost_sales:,.0f} lost-sales proxy, {t.stockout_impact_pct:.1f}% stockout "
+                       f"impact, {t.return_rate_pct:.1f}% return rate, and {int(t.service_issues):,} "
+                       f"service issues.",
+            "signals": [("Top vendor", f"{t.vendor_name} ({t.vendor_id})"),
+                        ("Lost sales (7d)", f"${t.lost_sales:,.0f}"),
+                        ("Stockout impact", f"{t.stockout_impact_pct:.1f}%"),
+                        ("Service issues", f"{int(t.service_issues):,}")],
+            "chart": {"kind": "bar", "x": "vendor_name", "y": "lost_sales",
+                      "title": "Lost-sales proxy by vendor — last 7 days"},
+            "table": df, "recommendation": "Merchandising: open a partner review with the top-risk vendor."}
+
+
 THEMES = [
+    # --- Health ---
     Theme("exec_briefing", "Executive: give me today's daily performance briefing.",
           "analytics", "Analytics / Leadership", _exec_briefing),
     Theme("cx_health", "Customer Service: run a customer-experience health check.",
           "service", "Customer Service", _cx_health),
     Theme("fulfillment_review", "Fulfillment: review fulfillment performance over the last two weeks.",
           "fulfillment", "Fulfillment Operations", _fulfillment_review),
-    Theme("marketing_efficiency", "Marketing: review marketing efficiency across channels.",
+    Theme("marketing_efficiency", "Marketing: review campaign spend efficiency across channels.",
           "marketing", "Marketing", _marketing_efficiency),
-    Theme("revenue_quality", "Finance: review revenue quality (gross vs net) over time.",
+    Theme("revenue_quality", "Finance: review revenue quality (gross vs net and margin) over time.",
           "finance", "Finance", _revenue_quality),
+    # --- Trend / anomaly ---
     Theme("trending_worse", "Analytics: what's trending worse week-over-week?",
           "analytics", "Digital Analytics", _trending_worse),
     Theme("unusual_spikes", "Analytics: are there any unusual spikes in the last 7 days?",
           "analytics", "Digital Analytics", _unusual_spikes),
     Theme("funnel_health", "Digital Analytics: how is checkout funnel health trending?",
           "analytics", "Digital Analytics", _funnel_health),
+    # --- Risk ---
     Theme("stockout_risk", "Merchandising: which categories are at stockout risk?",
           "merchandising", "Merchandising", _stockout_risk),
     Theme("fulfillment_risk", "Fulfillment: which regions are at fulfillment risk?",
           "fulfillment", "Fulfillment Operations", _fulfillment_risk),
     Theme("cx_risk", "Customer Service: where is customer-experience risk building?",
           "service", "Customer Service", _cx_risk),
+    Theme("vendor_risk", "Merchandising: which vendor partner is on the risk watch list?",
+          "merchandising", "Merchandising", _vendor_risk),
 ]
 
 _BY_ID = {t.id: t for t in THEMES}
