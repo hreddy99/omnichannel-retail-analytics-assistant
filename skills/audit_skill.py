@@ -19,6 +19,7 @@ class AuditLog:
     events: list[dict] = field(default_factory=list)
     actions: list[dict] = field(default_factory=list)
     steps: list[dict] = field(default_factory=list)
+    reviews: list[dict] = field(default_factory=list)
 
     def step(self, node: str, detail: str, ok: bool = True):
         """User-visible decision-log step (Plan section 17.3, level 1-2)."""
@@ -47,6 +48,18 @@ class AuditLog:
             "priority": priority, "recommended_next_step": next_step,
             "status": "recommended (human-reviewed; no system write)",
         })
+
+    def create_review_request(self, *, reason: str, risk_level: str, impacted_owner: str,
+                              recommended_action: str, evidence_summary: str = "") -> dict:
+        """Record a HumanReviewRequest (Plan section 6 / 12.3). The assistant only
+        recommends; this marks WHY an owner must review before any business action."""
+        from agents.contracts import HumanReviewRequest
+        req = HumanReviewRequest(
+            run_id=self.run_id, reason=reason, risk_level=risk_level,
+            impacted_owner=impacted_owner, recommended_action=recommended_action,
+            evidence_summary=evidence_summary).to_dict()
+        self.reviews.append(req)
+        return req
 
     def to_jsonl(self) -> str:
         import json

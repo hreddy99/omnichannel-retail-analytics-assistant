@@ -86,6 +86,19 @@ class AgentResult:
     elapsed_ms: int = 0
     error: str = ""
 
+    def to_finding(self, task_id: str = "", confidence: str = "") -> "AgentFinding":
+        """Project this result onto the typed AgentFinding contract (Plan 6)."""
+        from agents.contracts import AgentFinding
+        rows = 0
+        try:
+            rows = int(len(self.evidence)) if self.evidence is not None else 0
+        except TypeError:
+            rows = 0
+        return AgentFinding(
+            task_id=task_id or self.key, agent_name=self.agent_name, status=self.status,
+            evidence_summary=self.finding, confidence=confidence, owner=self.owner,
+            sql_template_id=self.key, row_count=rows)
+
 
 class DomainAgent:
     """A specialized analyst: one domain, one governed driver, one read-only query."""

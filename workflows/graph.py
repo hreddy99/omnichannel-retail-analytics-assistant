@@ -51,6 +51,8 @@ class WState(TypedDict, total=False):
     queries_used: int
     answer: dict
     refusal: str | None
+    review: dict | None
+    sync: dict
 
 
 def _step(state: WState, node: str, detail: str, ok: bool = True):
@@ -176,7 +178,7 @@ def n_sync_gate(state: WState) -> dict:
             user_visible_note="Catalog/graph/vector versions verified in sync.")
     _step(state, "sync gate", f"{msg} Vector index in_sync={sync['in_sync']} "
           f"(embedder: {sync.get('embedder')}).", ok and sync["in_sync"])
-    return {}
+    return {"sync": {"in_sync": bool(ok and sync["in_sync"]), "embedder": sync.get("embedder")}}
 
 
 def n_retrieve(state: WState) -> dict:
@@ -383,6 +385,54 @@ def n_evidence_gate(state: WState) -> dict:
     return {}
 
 
+def n_human_review(state: WState) -> dict:
+    """Human-review gate (Plan section 12.3 / 14). Recommendations are never
+    executed automatically — this evaluates the safety triggers and raises a
+    HumanReviewRequest so high-risk / low-confidence / conflicting / business-
+    impacting findings are reviewed by their owner before any action."""
+    from agents.contracts import max_risk
+    a: AuditLog = state["audit"]
+    beam = state.get("beam", [])
+    deferred = state.get("deferred", [])
+    likely = [b for b in beam if b.confidence == "likely driver"]
+
+    reasons: list[str] = []
+    risk = "low"
+    if state.get("refusal"):
+        reasons.append("user requested an operational write — converted to a recommendation")
+        risk = max_risk(risk, "high")
+    if not likely:
+        reasons.append("no driver met the evidence threshold (inconclusive)")
+        risk = max_risk(risk, "medium")
+    elif len(likely) >= 2:
+        reasons.append("multiple drivers are likely — competing evidence to weigh")
+        risk = max_risk(risk, "high")
+    if not state.get("sync", {"in_sync": True}).get("in_sync", True):
+        reasons.append("a source artifact was stale/out of sync")
+        risk = max_risk(risk, "high")
+    if deferred:
+        reasons.append("possible contributors were deferred by the query budget and need confirmation")
+        risk = max_risk(risk, "medium")
+    # Every recommendation is business-impacting: it always routes to an owner for
+    # a human-reviewed decision rather than an automatic system change.
+    reasons.append("recommended actions are business-impacting and require owner review before execution")
+
+    top = (likely or beam or deferred)
+    impacted_owner = top[0].owner if top else "Analytics"
+    recommended_action = RECOMMENDATIONS.get(top[0].driver, "Review with the owner before acting.") if top else \
+        "Escalate as needs-analyst-review with recommended next checks."
+    review = a.create_review_request(
+        reason="; ".join(reasons), risk_level=risk, impacted_owner=impacted_owner,
+        recommended_action=recommended_action,
+        evidence_summary=(top[0].finding if top else "No branch met the evidence threshold."))
+    a.event(workflow_node="human_review_gate", decision_type="human_review_required",
+            tool_name="Guardrails", output_summary=f"risk={risk}; owner={impacted_owner}",
+            score_or_confidence=risk,
+            user_visible_note="Findings routed for human-reviewed owner action; no system write.")
+    _step(state, "human review", f"Routed for human review (risk: {risk}) — owner action only, no system write.")
+    return {"review": review}
+
+
 def n_synthesize(state: WState) -> dict:
     a: AuditLog = state["audit"]
     bl = state["baseline"]
@@ -528,6 +578,7 @@ def n_synthesize(state: WState) -> dict:
         "confidence": conf,
         "llm_mode": llm.mode(),
         "exec_summary": exec_summary,
+        "review": state.get("review"),
     }
     a.event(workflow_node="synthesize", decision_type="final_answer_ready", tool_name="Synthesis+LLM",
             output_summary=headline[:70], score_or_confidence=conf,
@@ -615,7 +666,7 @@ def build_workflow():
     chain = [("sync_gate", n_sync_gate), ("retrieve", n_retrieve), ("validate", n_validate),
              ("relate", n_relate), ("baseline", n_baseline), ("tot_gate", n_tot_gate),
              ("dispatch", n_dispatch), ("critic", n_critic), ("evidence_gate", n_evidence_gate),
-             ("synthesize", n_synthesize)]
+             ("human_review", n_human_review), ("synthesize", n_synthesize)]
     sg.add_node("classify", n_classify)
     sg.add_node("analytics", n_analytics)
     sg.add_node("themed", n_themed)
