@@ -334,6 +334,15 @@ DEMO_QUESTIONS = [
     "What caveats or data-freshness limits should I know before trusting this result?",
 ]
 
+# Cross-functional briefing questions: these fan out the WHOLE analyst team in
+# parallel (the multi-agent path) and return a ranked, owner-routed executive
+# briefing across every domain — not the single conversion-drop narrative.
+BRIEFING_QUESTIONS = [
+    "Give me an executive briefing on the biggest issues across the business yesterday.",
+    "Across all teams, what are the top cross-functional risks we should act on now?",
+    "Brief leadership on where to focus across marketing, merchandising, fulfillment, and service.",
+]
+
 # Functional requirements (id, requirement, priority, acceptance)
 FUNC_REQS = [
     ("FR-01", "User can enter a performance question in Streamlit.", "Must", "Captured in session state and shown in debug trace."),

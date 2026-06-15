@@ -85,14 +85,30 @@ def _driver_fig(focus_key, ev):
 
 
 def _bridge(df, title):
-    """Gross-to-net bridge: gross, the bridge components, then net (one-row df)."""
+    """Gross-to-net bridge: gross less the deductions that actually reduce net
+    (returns, discounts, adjustments) arriving at net revenue (one-row df). Tax and
+    shipping are reported separately and are not part of merchandise net."""
     r = df.iloc[0]
-    labels = ["gross", "returns", "tax", "shipping", "adjustments", "net"]
-    vals = [float(r.gross), float(r.returns_total), float(r.tax),
-            float(r.shipping), float(r.adjustments), float(r.net)]
-    colors = [_BLUE, _RED, _RED, _RED, _GREY, _GREEN]
+    labels = ["gross", "− returns", "− discounts", "± adjustments", "net"]
+    vals = [float(r.gross), float(r.returns_total), float(r.discounts),
+            float(r.adjustments), float(r.net)]
+    colors = [_BLUE, _RED, _RED, _GREY, _GREEN]
     fig = go.Figure(go.Bar(x=labels, y=vals, marker_color=colors))
     return _layout(fig, title)
+
+
+def briefing_fig(issues):
+    """Cross-domain executive briefing: evidence score (0-14) per issue, colored by
+    priority (Act now = red, otherwise blue)."""
+    if not issues:
+        return None
+    issues = list(issues)[:8]
+    labels = [i["label"] for i in issues]
+    scores = [i.get("score", 0) for i in issues]
+    colors = [_RED if i.get("priority") == "high" else _BLUE for i in issues]
+    fig = go.Figure(go.Bar(x=labels, y=scores, marker_color=colors))
+    fig.update_yaxes(range=[0, 14], title="evidence score (/14)")
+    return _layout(fig, "Cross-functional issues ranked by evidence strength")
 
 
 def from_spec(df, spec):
@@ -121,6 +137,8 @@ def evidence_figure(t):
     if intent == "overall" and t.get("baseline"):
         bl = t["baseline"]
         return conversion_fig(bl["series"], bl["baseline"], bl["target"])
+    if intent == "briefing":
+        return briefing_fig(a.get("briefing_issues"))
     if intent == "driver" and a.get("focus"):
         return _driver_fig(a["focus"].get("key") or _focus_key(t), a["focus"].get("evidence"))
     if intent in ("analytics", "themed") and a.get("chart"):
