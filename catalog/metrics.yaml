@@ -109,3 +109,119 @@ metrics:
     freshness_level: "T-1"
     caveats: ["Vendor attribution is directional; confirm with the category partner before action."]
     example_questions: ["Which vendor or category partner should be alerted about stockout impact?"]
+
+  # --- Phase II/III metrics (new data model) ---
+  campaign_conversion_rate:
+    label: "Campaign Conversion Rate"
+    domain: marketing
+    owner: "Marketing"
+    definition: >
+      Orders divided by sessions for a campaign on a date, from the daily campaign
+      performance table. Used to spot a campaign that drove traffic which converted
+      below its own recent baseline.
+    formula: "campaign_orders / campaign_sessions"
+    grain: campaign-day
+    approved_tables: [fact_campaign_daily, dim_campaign]
+    freshness_level: "T-1"
+    caveats:
+      - "A campaign can drive heavy traffic yet convert below baseline; weigh by sessions."
+      - "Low-traffic campaigns swing widely day to day; threshold on sessions before alerting."
+    example_questions:
+      - "Which campaign drove traffic that converted below normal?"
+      - "Which campaign contributed most to the conversion shortfall?"
+
+  conversion_contribution:
+    label: "Campaign Conversion Contribution"
+    domain: marketing
+    owner: "Marketing"
+    definition: >
+      Estimated orders gained or lost by a campaign relative to its baseline
+      conversion, computed as (target_conv - baseline_conv) * target_sessions.
+    formula: "(conv_target - conv_baseline) * sessions_target"
+    grain: campaign-day
+    approved_tables: [fact_campaign_daily, dim_campaign]
+    freshness_level: "T-1"
+    caveats: ["A contribution estimate, not an attributed cause; confirm with Marketing."]
+    example_questions: ["Which campaign cost us the most converted orders versus its baseline?"]
+
+  category_conversion:
+    label: "Category Add-to-Cart Rate"
+    domain: analytics
+    owner: "Digital Analytics"
+    definition: "Add-to-cart events divided by product-view events for a device or category."
+    formula: "add_to_cart_events / product_view_events"
+    grain: device-day
+    approved_tables: [fact_events]
+    freshness_level: "T-1"
+    caveats: ["A behavioral rate; mix shifts in device/category move the blended number."]
+    example_questions: ["What's the add-to-cart rate by device?"]
+
+  contact_rate_per_order:
+    label: "Contacts per Order"
+    domain: service
+    owner: "Customer Service"
+    definition: >
+      Customer service contacts in a reason group divided by completed orders over
+      the period; a higher ratio flags operational friction behind a reason group.
+    formula: "contacts_in_reason_group / completed_orders"
+    grain: reason-group
+    approved_tables: [fact_customer_contacts, dim_contact_reason, fact_orders]
+    freshness_level: "T-1"
+    caveats: ["Contacts trail their root cause; treat as a corroborating signal, not a cause."]
+    example_questions: ["How many contacts per order does each reason group generate?"]
+
+  gross_to_net_delta:
+    label: "Gross-to-Net Bridge"
+    domain: finance
+    owner: "Finance"
+    definition: >
+      The components that bridge gross sales to net revenue — returns, tax, shipping,
+      and adjustments — summed over the period.
+    formula: "gross_sales - returns - tax - shipping + adjustments ≈ net_revenue"
+    grain: day
+    approved_tables: [fact_finance_daily]
+    freshness_level: "T-1"
+    caveats: ["Accounting bridge, not an operational conversion cause; signs follow ledger conventions."]
+    example_questions: ["What are the gross-to-net bridge components?"]
+
+  margin_proxy:
+    label: "Margin Proxy"
+    domain: finance
+    owner: "Finance"
+    definition: >
+      Approximate gross margin by category from the margin-proxy table:
+      (net_sales - discount - returns) over net_sales.
+    formula: "(net_sales - discount_amount - return_amount) / net_sales"
+    grain: category-day
+    approved_tables: [fact_margin_proxy_daily, dim_category]
+    freshness_level: "T-1"
+    caveats: ["A directional proxy; excludes COGS detail — not a certified GL margin."]
+    example_questions: ["What's the margin proxy by category?"]
+
+  vendor_availability_impact:
+    label: "Vendor Availability Impact"
+    domain: merchandising
+    owner: "Merchandising"
+    definition: >
+      Vendor/category scorecard combining stockout impact, lost-sales proxy, return
+      rate, and service issues to flag the partner to alert.
+    formula: "rank by lost_sales_proxy with stockout_impact / return_rate / service_issues context"
+    grain: vendor-category-day
+    approved_tables: [fact_vendor_scorecard, dim_vendor]
+    freshness_level: "T-1"
+    caveats: ["Scorecard is directional; confirm with the category partner before action."]
+    example_questions: ["Which vendor or category partner should we alert?"]
+
+  return_rate:
+    label: "Return Rate by Category"
+    domain: merchandising
+    owner: "Merchandising"
+    definition: >
+      Returns (from the returns fact) divided by completed orders for a category,
+      with returned value for context.
+    formula: "category_returns / category_orders"
+    grain: category
+    approved_tables: [fact_returns, fact_orders, dim_category]
+    freshness_level: "T-1"
+    caveats: ["Returns lag the originating order date; rate is period-cumulative."]
+    example_questions: ["What's the return rate by category?"]

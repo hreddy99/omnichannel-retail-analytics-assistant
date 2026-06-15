@@ -74,8 +74,8 @@ ENTERPRISE_ALIGNMENT = (
 # Medallion architecture mapping (layer, role)
 MEDALLION = [
     ("Bronze", "Raw data lands from operational systems (ecommerce clickstream, OMS, ERP inventory, fulfillment, campaign, finance, service), preserving source detail and traceability."),
-    ("Silver", "Cleaned, standardized, conformed analytical tables: sessions, events, orders, order items, product, category, inventory, fulfillment, campaign, service contacts, finance daily."),
-    ("Gold", "Business-ready metrics and data products: digital conversion, sales performance, inventory availability, fulfillment delay rate, campaign conversion, net revenue, contact trends."),
+    ("Silver", "Cleaned, standardized, conformed analytical tables: sessions, events, orders, order items, product, category, inventory, fulfillment, campaign daily, service contacts, finance daily, returns, vendor scorecard, region/vendor/contact-reason dimensions."),
+    ("Gold", "Business-ready metrics and data products: digital conversion, sales performance, inventory availability, fulfillment delay rate, campaign conversion, gross-to-net bridge, margin proxy, return rate, vendor scorecard, contact trends."),
 ]
 MEDALLION_NOTE = (
     "The assistant primarily queries curated Silver and Gold data. The YAML semantic "
@@ -292,11 +292,18 @@ SYNTH_TABLES = [
     ("fact_order_items", "order item", "Product/category sales and item-level drilldowns."),
     ("fact_inventory_daily", "product-location-day", "Stockout flag, available-online flag, inventory pressure."),
     ("fact_fulfillment", "order-fulfillment", "Promise/actual date, delay days, cancellations, fulfillment type."),
-    ("fact_customer_contacts", "contact", "Contact reason, channel, resolution, order link."),
-    ("fact_finance_daily", "date/channel/category", "Gross sales, net revenue, returns, tax, shipping."),
+    ("fact_customer_contacts", "contact", "Contact reason, channel, region, order link, resolution, wait time."),
+    ("fact_finance_daily", "date/channel/category", "Gross sales, net revenue, returns, tax, shipping, margin proxy."),
+    ("fact_returns", "return line", "Returned orders by product/category with reason and amount."),
+    ("fact_campaign_daily", "campaign-day", "Spend, impressions, clicks, sessions, orders, conversion by campaign."),
+    ("fact_margin_proxy_daily", "category-day", "Net sales, discount, returns, and a margin proxy by category."),
+    ("fact_vendor_scorecard", "vendor-category-day", "Stockout impact, lost-sales proxy, return rate, service issues."),
     ("dim_product", "product", "SKU, category, brand, price band, vendor_id, partner flag."),
     ("dim_category", "category", "Department, category hierarchy, owner."),
     ("dim_campaign", "campaign", "Campaign name, channel, date range, spend, audience, owner."),
+    ("dim_vendor", "vendor", "Vendor name, CPG partner flag, category owner, contact group."),
+    ("dim_contact_reason", "reason code", "Reason group, related driver, escalation flag."),
+    ("dim_region", "region", "Zone, carrier group, fulfillment owner."),
 ]
 
 # Seeded scenarios (scenario, pattern, expected evidence, owner)
@@ -428,7 +435,7 @@ READINESS = [
 
 # This prototype's status vs the plan (component, status, note)
 PROTOTYPE_STATUS = [
-    ("Faker synthetic data + seeded scenarios", "Built", "data/generator.py: fact_/dim_ model, 40+1 days, 5 scenarios, eval-only answer key."),
+    ("Faker synthetic data + seeded scenarios", "Built", "data/generator.py: 18-table fact_/dim_ model (Phase II/III: returns, campaign daily, vendor scorecard, margin proxy, region/vendor/contact-reason dims), 40+1 days, seeded scenarios, eval-only answer key."),
     ("Data validation (section 14.4)", "Built", "evals/validation.py: all checks pass, drop in 15-25% band."),
     ("Split YAML catalog + version manifest", "Built", "catalog/*.yaml with per-file content hashes."),
     ("ChromaDB + sentence-transformers retrieval", "Built", "skills/retrieval_skill.py: real Chroma; ST->ONNX->hashing fallback; sync gate."),
