@@ -308,15 +308,22 @@ def generate(seed: int = SEED) -> dict[str, pd.DataFrame]:
         for cid in CAT_IDS:
             gross = float(rng.uniform(8000, 24000))
             returns = gross * float(rng.uniform(0.04, 0.10))
+            # deterministic rate (like tax/shipping) so this does not consume a draw
+            # from the shared RNG stream and perturb downstream session/conversion seeds
+            discount = gross * 0.05
             tax = gross * 0.07; shipping = gross * 0.03
             adj = gross * float(rng.uniform(-0.01, 0.01))
-            net = gross - returns + tax + shipping + adj
+            # Recognized net revenue excludes tax/shipping and is reduced by returns,
+            # discounts, and adjustments, so net is always below gross (the gross-to-net
+            # bridge). Tax/shipping are reported separately, not part of merchandise net.
+            net = gross - returns - discount + adj
             # margin proxy: gross-margin-ish ratio; one category runs structurally weak
             margin = float(rng.uniform(0.34, 0.46))
             if cid == SCEN["margin_weak_category"]:
                 margin = float(rng.uniform(0.12, 0.20))
             fin_rows.append({"date": d, "channel": "all", "category_id": cid,
                              "gross_sales": round(gross, 2), "returns": round(returns, 2),
+                             "discounts": round(discount, 2),
                              "tax": round(tax, 2), "shipping": round(shipping, 2),
                              "adjustments": round(adj, 2),
                              "net_revenue": round(net, 2),

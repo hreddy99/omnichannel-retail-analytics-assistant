@@ -123,12 +123,17 @@ def _net_trend(df):
 
 def _gross_to_net(df):
     r = df.iloc[0]
-    return {"headline": f"Gross-to-net bridge: ${r.gross:,.0f} gross → ${r.net:,.0f} net.",
-            "summary": f"Over the period, gross sales of ${r.gross:,.0f} bridge to ${r.net:,.0f} net "
-                       f"revenue via returns ${r.returns_total:,.0f}, tax ${r.tax:,.0f}, shipping "
-                       f"${r.shipping:,.0f}, and adjustments ${r.adjustments:,.0f}.",
+    pct = (r.gross - r.net) / r.gross if r.gross else 0
+    return {"headline": f"Gross-to-net bridge: ${r.gross:,.0f} gross → ${r.net:,.0f} net "
+                        f"({pct:.1%} reduction).",
+            "summary": f"Recognized net revenue of ${r.net:,.0f} is ${r.gross - r.net:,.0f} below "
+                       f"${r.gross:,.0f} gross sales, reduced by returns ${r.returns_total:,.0f}, "
+                       f"discounts ${r.discounts:,.0f}, and adjustments ${r.adjustments:,.0f}. Tax "
+                       f"${r.tax:,.0f} and shipping ${r.shipping:,.0f} are reported separately and "
+                       f"are not part of merchandise net — neither source is wrong; they answer "
+                       f"different reporting questions.",
             "metrics": [("Gross", f"${r.gross:,.0f}"), ("Returns", f"${r.returns_total:,.0f}"),
-                        ("Tax", f"${r.tax:,.0f}"), ("Net", f"${r.net:,.0f}")]}
+                        ("Discounts", f"${r.discounts:,.0f}"), ("Net", f"${r.net:,.0f}")]}
 
 
 def _margin_proxy(df):
@@ -251,8 +256,9 @@ INSIGHTS = [
     Insight("gross_to_net", "Finance: what are the gross-to-net bridge components?",
             "finance", "Finance",
             "SELECT round(sum(gross_sales),0) AS gross, round(sum(returns),0) AS returns_total, "
-            "round(sum(tax),0) AS tax, round(sum(shipping),0) AS shipping, "
-            "round(sum(adjustments),0) AS adjustments, round(sum(net_revenue),0) AS net "
+            "round(sum(discounts),0) AS discounts, round(sum(adjustments),0) AS adjustments, "
+            "round(sum(net_revenue),0) AS net, round(sum(tax),0) AS tax, "
+            "round(sum(shipping),0) AS shipping "
             "FROM fact_finance_daily", _gross_to_net),
     Insight("margin_proxy", "Finance: what's the margin proxy by category?",
             "finance", "Finance",

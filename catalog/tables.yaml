@@ -61,7 +61,7 @@ tables:
   fact_finance_daily:
     grain: "one row per date/channel/category"
     keys: [date, channel, category_id]
-    columns: [date, channel, category_id, gross_sales, returns, tax, shipping, adjustments, net_revenue, margin_proxy]
+    columns: [date, channel, category_id, gross_sales, returns, discounts, tax, shipping, adjustments, net_revenue, margin_proxy]
     allowed_joins: [dim_category]
     freshness: "T-1"
     owner: "Finance"
