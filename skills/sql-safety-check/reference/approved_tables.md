@@ -1,6 +1,6 @@
 # Approved tables (read-only)
 
-The SQL validator (`src.guardrails.check_sql`) permits SELECT/WITH over only these
+The SQL validator (`skills.sql_skill.check_sql`) permits SELECT/WITH over only these
 tables, sourced from `catalog/tables.yaml`:
 
 - `fact_sessions`, `fact_events`, `fact_orders`, `fact_order_items`

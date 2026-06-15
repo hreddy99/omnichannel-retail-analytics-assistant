@@ -6,18 +6,28 @@ the governed investigation workflow (ReAct + RAG + Knowledge Graph + conditional
 ToT beam search). The Live Demo runs the real LangGraph pipeline and exposes the
 four trace levels from Plan section 17.3.
 
-Run:  streamlit run app.py
+Run:  streamlit run app/main.py
 """
 from __future__ import annotations
+
+import pathlib
+import sys
+
+# Ensure the repository root is importable when launched via `streamlit run
+# app/main.py` (Streamlit only puts the script's own directory on sys.path).
+_ROOT = pathlib.Path(__file__).resolve().parent.parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
 
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from src import agent_specs, catalog, charts, graph, guardrails, insights, llm, themes
-from src import plan_content as P
-from src import retrieval
-from src.investigation import BEAM_WIDTH, QUERY_BUDGET, run_investigation, run_investigation_stream
+from skills import spec_loader as agent_specs, catalog_skill as catalog, ui_format_skill as charts
+from skills import graph_skill as graph, sql_skill as guardrails, llm_skill as llm, retrieval_skill as retrieval
+from workflows import insights, themes
+from app import content as P
+from workflows.investigation import BEAM_WIDTH, QUERY_BUDGET, run_investigation, run_investigation_stream
 
 st.set_page_config(page_title="Omnichannel Retail Analytics Assistant",
                    page_icon="🛍️", layout="wide")
@@ -648,7 +658,7 @@ def page_interactive_plan():
 # PAGE: Diagrams
 # ==========================================================================
 def page_diagrams():
-    from src import diagrams
+    from app import diagrams
     st.title("📐 Architecture, Agents & Skills")
     st.caption("Full reference architecture, agent delegation, and the flow diagrams; "
                "plus the agent and skill definitions that document the system.")
@@ -722,8 +732,8 @@ def page_catalog():
 # ==========================================================================
 @st.cache_data(show_spinner="Running checks…")
 def _eval_results():
-    from src import data_validation
-    from src.workflow import classify_intent
+    from evals import validation as data_validation
+    from workflows.graph import classify_intent
     rows = list(data_validation.run_checks())
     # classification routing checks
     expected = ([(q, "overall" if i == 0 else "driver") for i, q in enumerate(P.DEMO_QUESTIONS[:8])]

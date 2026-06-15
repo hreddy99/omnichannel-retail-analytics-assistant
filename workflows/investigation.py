@@ -2,7 +2,7 @@
 Investigation orchestrator (public entry point used by the Streamlit app).
 
 Wires the governed layers together and invokes the multi-agent LangGraph
-workflow (src/workflow.py), returning a single trace dict consumed by the UI.
+workflow (workflows/graph.py), returning a single trace dict consumed by the UI.
 
 Two entry points:
   * run_investigation()        - run to completion, return the trace.
@@ -12,11 +12,11 @@ Two entry points:
 """
 from __future__ import annotations
 
-from . import catalog, graph, retrieval
-from .audit import AuditLog
-from .synthetic_data import build_duckdb, get_meta
-from .tot import BEAM_WIDTH, QUERY_BUDGET  # re-export for the UI
-from .workflow import get_app
+from skills import catalog_skill as catalog, graph_skill as graph, retrieval_skill as retrieval
+from skills.audit_skill import AuditLog
+from skills.tot_skill import BEAM_WIDTH, QUERY_BUDGET  # re-export for the UI
+from data.generator import build_duckdb, get_meta
+from workflows.graph import get_app
 
 __all__ = ["run_investigation", "run_investigation_stream", "BEAM_WIDTH", "QUERY_BUDGET"]
 

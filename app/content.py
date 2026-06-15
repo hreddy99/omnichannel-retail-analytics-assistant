@@ -428,16 +428,16 @@ READINESS = [
 
 # This prototype's status vs the plan (component, status, note)
 PROTOTYPE_STATUS = [
-    ("Faker synthetic data + seeded scenarios", "Built", "src/synthetic_data.py: fact_/dim_ model, 40+1 days, 5 scenarios, eval-only answer key."),
-    ("Data validation (section 14.4)", "Built", "src/data_validation.py: all checks pass, drop in 15-25% band."),
+    ("Faker synthetic data + seeded scenarios", "Built", "data/generator.py: fact_/dim_ model, 40+1 days, 5 scenarios, eval-only answer key."),
+    ("Data validation (section 14.4)", "Built", "evals/validation.py: all checks pass, drop in 15-25% band."),
     ("Split YAML catalog + version manifest", "Built", "catalog/*.yaml with per-file content hashes."),
-    ("ChromaDB + sentence-transformers retrieval", "Built", "src/retrieval.py: real Chroma; ST->ONNX->hashing fallback; sync gate."),
-    ("NetworkX graph from YAML", "Built", "src/graph.py: metric/table/system/driver/owner + edge types; version+hash gate."),
-    ("LangGraph workflow", "Built", "src/workflow.py: real StateGraph, 10 nodes, ReAct loop."),
-    ("Conditional ToT beam search", "Built", "src/tot.py: width 2, depth 2, rubric, pruning, budget, governance pre-screen."),
-    ("Multi-agent team", "Built", "src/agents.py: specialized analysts, parallel dispatch, coordination log, graceful degradation; full team + executive summary."),
-    ("Guardrails (SQL/freshness/conflict/write)", "Built", "src/guardrails.py driven by guardrails.yaml."),
-    ("Audit trail + action log", "Built", "src/audit.py: run_id, section-17.2 event schema, human-reviewed actions."),
+    ("ChromaDB + sentence-transformers retrieval", "Built", "skills/retrieval_skill.py: real Chroma; ST->ONNX->hashing fallback; sync gate."),
+    ("NetworkX graph from YAML", "Built", "skills/graph_skill.py: metric/table/system/driver/owner + edge types; version+hash gate."),
+    ("LangGraph workflow", "Built", "workflows/graph.py: real StateGraph, 10 nodes, ReAct loop."),
+    ("Conditional ToT beam search", "Built", "skills/tot_skill.py: width 2, depth 2, rubric, pruning, budget, governance pre-screen."),
+    ("Multi-agent team", "Built", "agents/team.py: specialized analysts, parallel dispatch, coordination log, graceful degradation; full team + executive summary."),
+    ("Guardrails (SQL/freshness/conflict/write)", "Built", "skills/sql_skill.py driven by guardrails.yaml."),
+    ("Audit trail + action log", "Built", "skills/audit_skill.py: run_id, section-17.2 event schema, human-reviewed actions."),
     ("Multi-tab UI + 4 trace levels", "Built", "app.py: Answer/Evidence/Trust/ToT/Audit/Action tabs."),
-    ("Ollama LLM drafting", "Optional", "src/llm.py: used if a daemon is reachable; deterministic fallback otherwise."),
+    ("Ollama LLM drafting", "Optional", "skills/llm_skill.py: used if a daemon is reachable; deterministic fallback otherwise."),
 ]

@@ -19,7 +19,7 @@ import hashlib
 import chromadb
 from chromadb.api.types import Documents, EmbeddingFunction, Embeddings
 
-from . import catalog
+from skills import catalog_skill as catalog
 
 EMBED_DIM = 256
 

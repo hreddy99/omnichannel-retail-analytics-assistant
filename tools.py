@@ -84,7 +84,7 @@ def cmd_setup(_args) -> int:
 def cmd_validate(_args) -> int:
     py = ensure_venv()
     _banner("Validating synthetic data pipeline (Plan section 14.4)")
-    return _run([str(py), "-m", "src.data_validation"])
+    return _run([str(py), "-m", "evals.validation"])
 
 
 def cmd_html(_args) -> int:
@@ -102,7 +102,7 @@ def cmd_run(args) -> int:
         py = venv_python()
     _banner("Launching Streamlit app  (open http://localhost:8501 ; Ctrl+C to stop)")
     extra = args.extra or []
-    return _run([str(py), "-m", "streamlit", "run", str(ROOT / "app.py"), *extra])
+    return _run([str(py), "-m", "streamlit", "run", str(ROOT / "app" / "main.py"), *extra])
 
 
 def cmd_doctor(_args) -> int:

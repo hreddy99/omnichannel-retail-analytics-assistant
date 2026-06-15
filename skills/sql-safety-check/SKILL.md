@@ -9,7 +9,7 @@ Enforces the read-only, governed contract: SELECT/WITH only, no write/DDL keywor
 single statement, and only tables approved in the YAML catalog.
 
 ## Instructions
-1. Call `src.guardrails.check_sql(sql)` → returns `(ok, reason)`.
+1. Call `skills.sql_skill.check_sql(sql)` → returns `(ok, reason)`.
 2. If `ok` is False, do **not** execute; revise the plan (e.g. drop the unapproved table).
 3. Approved tables are listed in `reference/approved_tables.md` and derived live from
    `catalog/tables.yaml` via `catalog.approved_tables()`.

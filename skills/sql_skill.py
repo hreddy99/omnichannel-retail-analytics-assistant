@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import re
 
-from . import catalog
+from skills import catalog_skill as catalog
 
 
 def _gr() -> dict:
