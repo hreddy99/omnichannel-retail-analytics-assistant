@@ -4,14 +4,14 @@ Synthetic data validation checks (Plan section 14.4).
 Confirms the generated data contains the expected demo signals and that the
 evaluation-only answer key is not exposed to the analysis connection. Run:
 
-    python -m src.data_validation
+    python -m evals.validation
 """
 from __future__ import annotations
 
 import datetime as dt
 
-from . import guardrails
-from .synthetic_data import SCEN, build_duckdb, get_meta
+from skills import sql_skill as guardrails
+from data.generator import SCEN, build_duckdb, get_meta
 
 
 def run_checks(seed: int = 42) -> list[dict]:

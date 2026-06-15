@@ -6,8 +6,8 @@ import sys
 # allow running directly (python skills/refresh-synthetic-data/scripts/refresh.py)
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3]))
 
-from src.data_validation import run_checks
-from src.synthetic_data import generate
+from evals.validation import run_checks
+from data.generator import generate
 
 
 def main() -> int:

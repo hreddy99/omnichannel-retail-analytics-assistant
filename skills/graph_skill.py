@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import networkx as nx
 
-from . import catalog
+from skills import catalog_skill as catalog
 
 
 def build_graph() -> nx.DiGraph:

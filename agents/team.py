@@ -40,7 +40,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import Any
 
-from . import catalog, tot
+from skills import catalog_skill as catalog, tot_skill as tot
 
 # driver key -> human-facing analyst name
 AGENT_NAMES = {

@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "omnichannel-retail-analytics-assistant"
+version = "0.1.0"
+description = "Governed, read-only multi-agent retail analytics assistant (ReAct + RAG + knowledge graph + conditional Tree-of-Thought) over synthetic data."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+
+# Free / local stack (Plan section 5). Mirrors requirements.txt.
+dependencies = [
+    "streamlit>=1.32",
+    "pandas>=2.0",
+    "numpy>=1.26",
+    "duckdb>=0.10",
+    "networkx>=3.0",
+    "plotly>=5.18",
+    "PyYAML>=6.0",
+    "Faker>=22.0",
+    "langgraph>=0.2",
+    "chromadb>=0.5",
+    "sentence-transformers>=2.2",
+    "ollama>=0.3",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[tool.setuptools]
+# Source layout follows the implementation plan: top-level capability packages
+# rather than a single src/ tree.
+packages = ["app", "agents", "skills", "workflows", "data", "evals"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

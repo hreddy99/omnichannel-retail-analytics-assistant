@@ -10,11 +10,11 @@ baseline → ToT gate → dispatch analyst team (parallel) → critic + beam →
 synthesize. Evidence strength is gated on the structural checks (metric + graph + SQL).
 
 ## Instructions
-1. `from src.investigation import run_investigation`
+1. `from workflows.investigation import run_investigation`
 2. `t = run_investigation("Why did digital conversion drop yesterday compared with the prior 7-day average?")`
 3. Read: `t["answer"]` (headline, summary, drivers, exec_summary), `t["beam"]` /
    `t["depth1"]` (scored branches), `t["steps"]` (decision log), `t["audit"]` (events).
 4. Tune `beam_width`, `depth`, `top_k`, or `inject_failure` to explore behavior.
 5. In the app, the **🔬 Live Demo** page streams each step and exposes the trace tabs.
 
-Implementation: `src/workflow.py` (LangGraph), `src/tot.py` (scoring), `src/agents.py` (team).
+Implementation: `workflows/graph.py` (LangGraph), `skills/tot_skill.py` (scoring), `agents/team.py` (team).

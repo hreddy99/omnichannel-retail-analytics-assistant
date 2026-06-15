@@ -13,13 +13,24 @@ UI Trust/Audit panels so the degradation is visible, not hidden.
 from __future__ import annotations
 
 import functools
+import os
+import pathlib
 
-DEFAULT_MODEL = "llama3.2"
+# Default local model (overridable via OLLAMA_MODEL in .env / environment).
+DEFAULT_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
 # Keep the demo responsive: bound the request and cap generation so a slow local
 # model (e.g. a 7B model on CPU) can't stall the investigation - it falls back to
 # the deterministic template if it exceeds these limits.
-REQUEST_TIMEOUT_S = 20.0
-MAX_TOKENS = 200
+REQUEST_TIMEOUT_S = float(os.getenv("OLLAMA_TIMEOUT_S", "20"))
+MAX_TOKENS = int(os.getenv("OLLAMA_MAX_TOKENS", "200"))
+
+_PROMPTS_DIR = pathlib.Path(__file__).resolve().parent.parent / "prompts"
+
+
+@functools.lru_cache(maxsize=None)
+def _load_prompt(name: str) -> str:
+    """Load a structured prompt template from prompts/<name>.txt."""
+    return (_PROMPTS_DIR / f"{name}.txt").read_text(encoding="utf-8").strip()
 
 
 @functools.lru_cache(maxsize=1)
@@ -51,10 +62,8 @@ def draft_answer(question: str, facts: str, confidence: str) -> str:
     if info["available"]:
         try:
             import ollama
-            prompt = ("You are a retail analytics assistant. Answer the user's question in at most "
-                      "2 cautious, business-facing sentences, using ONLY the facts provided. Do not "
-                      "invent numbers. Address the question directly.\n"
-                      f"Question: {question}\nFacts: {facts}\nOverall confidence: {confidence}.")
+            prompt = _load_prompt("draft_answer").format(
+                question=question, facts=facts, confidence=confidence)
             resp = ollama.Client(timeout=REQUEST_TIMEOUT_S).chat(
                 model=info["model"], messages=[{"role": "user", "content": prompt}],
                 options={"num_predict": MAX_TOKENS})
@@ -72,11 +81,8 @@ def draft_summary(headline: str, drivers: list[dict], confidence: str) -> str:
     if info["available"]:
         try:
             import ollama
-            prompt = (
-                "You are a retail analytics assistant. Write a 2-sentence, cautious, "
-                "business-facing summary. Do not invent numbers beyond those given. "
-                f"Headline: {headline}. Supported drivers: {driver_lines}. "
-                f"Overall confidence: {confidence}. Use guarded language.")
+            prompt = _load_prompt("draft_summary").format(
+                headline=headline, drivers=driver_lines, confidence=confidence)
             resp = ollama.Client(timeout=REQUEST_TIMEOUT_S).chat(
                 model=info["model"], messages=[{"role": "user", "content": prompt}],
                 options={"num_predict": MAX_TOKENS})

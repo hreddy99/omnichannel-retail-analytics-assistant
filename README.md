@@ -89,8 +89,8 @@ python build_html.py            # writes project_plan.html
 Rebuild / validate the synthetic data:
 
 ```bash
-python -m src.synthetic_data    # row counts per table
-python -m src.data_validation   # Plan section 14.4 checks
+python -m data.generator    # row counts per table
+python -m evals.validation   # Plan section 14.4 checks
 ```
 
 ## App pages
@@ -135,26 +135,45 @@ answer → Multi-agent team → Evidence → Trust details → ToT trace → Tec
 ## Repository layout
 
 ```
-app.py                 Streamlit app (6 pages, multi-tab Live Demo)
 build_html.py          Standalone interactive project_plan.html generator
+tools.py               One-command setup / validate / run task runner
+pyproject.toml         Package metadata + dependencies
 requirements.txt       Free/local dependencies
+.env.example           Optional local LLM (Ollama) configuration template
+
+app/                   Streamlit UI
+  main.py              Streamlit app (pages, multi-tab Live Demo)
+  content.py           Structured plan content (shared by app + HTML)
+  diagrams.py          Graphviz DOT diagrams rendered in-app
+agents/                Multi-agent analyst team
+  team.py              Specialized domain agents + parallel dispatch
+  *.md                 Agent specs (frontmatter name/description/tools + prompt)
+skills/                Governed capability wrappers (anatomy: <name>/SKILL.md)
+  catalog_skill.py     Split-YAML loader, per-file hashes, governed chunks
+  retrieval_skill.py   ChromaDB + sentence-transformers (+ fallbacks) + sync gate
+  graph_skill.py       NetworkX graph from YAML (version + hash gated)
+  sql_skill.py         SQL safety / freshness / conflict / write refusal
+  tot_skill.py         Per-domain evidence queries + ToT beam-search scoring rubric
+  audit_skill.py       Append-only audit trail + action log (section 17.2)
+  ui_format_skill.py   Per-question chart resolution + business formatting
+  llm_skill.py         Ollama wrapper with deterministic fallback
+  spec_loader.py       Loads agent specs + SKILL.md anatomy for the UI
+workflows/             LangGraph orchestration
+  graph.py             LangGraph StateGraph controller (nodes + routing)
+  investigation.py     Orchestrator (public run_investigation entry point)
+  insights.py          11 standalone analytics questions
+  themes.py            11 themed health / trend / risk reviews
+data/                  Synthetic data
+  generator.py         Faker fact_/dim_ generator + seeded scenarios + eval-only key
+evals/                 Evaluation harness
+  validation.py        Plan section 14.4 validation checks
 catalog/               Split YAML catalog (source of truth)
   metrics.yaml tables.yaml drivers.yaml business_rules.yaml
   guardrails.yaml examples.yaml versions.yaml
-src/
-  synthetic_data.py    Faker fact_/dim_ generator + seeded scenarios + eval-only key
-  data_validation.py   Plan section 14.4 validation checks
-  catalog.py           Split-YAML loader, per-file hashes, governed chunks
-  retrieval.py         ChromaDB + sentence-transformers (+ fallbacks) + sync gate
-  graph.py             NetworkX graph from YAML (version + hash gated)
-  guardrails.py        SQL safety / freshness / conflict / write refusal
-  agents.py            Multi-agent analyst team: specialized agents + parallel dispatch
-  tot.py               Per-domain evidence queries + ToT beam-search scoring rubric
-  workflow.py          LangGraph StateGraph controller (10 nodes)
-  llm.py               Ollama wrapper with deterministic fallback
-  audit.py             Append-only audit trail + action log (section 17.2)
-  investigation.py     Orchestrator (public run_investigation entry point)
-  plan_content.py      Structured plan content (shared by app + HTML)
+prompts/               Structured prompt templates
+scripts/               make_data / validate_catalog helpers
+tests/                 Unit + UI-contract tests (pytest)
+docs/                  Architecture notes + checkpoint documents
 ```
 
 ## Safety & governance

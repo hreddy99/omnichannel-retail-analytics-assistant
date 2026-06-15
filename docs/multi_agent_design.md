@@ -76,11 +76,11 @@ mitigation.
 
 ## Where it lives in the code
 
-- `src/agents.py` — `DomainAgent`, `AgentResult`, parallel `dispatch()`, the full
+- `agents/team.py` — `DomainAgent`, `AgentResult`, parallel `dispatch()`, the full
   analyst team, coordination log.
-- `src/workflow.py` — `n_dispatch` (parallel team) and `n_critic` (scoring +
+- `workflows/graph.py` — `n_dispatch` (parallel team) and `n_critic` (scoring +
   beam) nodes in the LangGraph controller; `n_synthesize` adds owner-routed
   recommended actions and an executive summary.
-- `src/tot.py` — per-domain evidence queries and the 0–14 scoring rubric.
-- `src/investigation.py` — `run_investigation(..., inject_failure=)` and
+- `skills/tot_skill.py` — per-domain evidence queries and the 0–14 scoring rubric.
+- `workflows/investigation.py` — `run_investigation(..., inject_failure=)` and
   `run_investigation_stream(...)` for live step streaming.

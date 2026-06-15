@@ -12,7 +12,7 @@ from __future__ import annotations
 import html
 import pathlib
 
-from src import plan_content as P
+from app import content as P
 
 OUT = pathlib.Path(__file__).resolve().parent / "project_plan.html"
 

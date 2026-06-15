@@ -8,7 +8,7 @@ data platform. Agents read the nearest `AGENTS.md` to the code they're editing.
 - **Language/stack:** Python 3.11–3.13. Free/local stack: Streamlit, LangGraph,
   DuckDB, ChromaDB, sentence-transformers, NetworkX, YAML, Ollama (optional).
 - **Run it:** `python tools.py run` (or `setup` / `validate` / `doctor`).
-- **Verify before commit:** `python -m src.data_validation` (must all pass) and the
+- **Verify before commit:** `python -m evals.validation` (must all pass) and the
   `streamlit.testing.v1.AppTest` smoke checks; keep page renders at **0 exceptions**.
 - **Read-only & governed:** no writes to operational systems; SELECT-only SQL over
   catalog-approved tables; YAML catalog is the source of truth; causality is labeled
@@ -16,7 +16,7 @@ data platform. Agents read the nearest `AGENTS.md` to the code they're editing.
 - **Keep this file lean** (≤150 lines); plain Markdown.
 
 ## Orchestration
-The **Analytics Orchestrator** (LangGraph `StateGraph`, `src/workflow.py`) routes a
+The **Analytics Orchestrator** (LangGraph `StateGraph`, `workflows/graph.py`) routes a
 question to one of three paths — conversion investigation, direct analytics insight,
 or themed review — applies the query budget and stopping condition, and composes the
 final answer. It dispatches the specialized analyst team **in parallel** only when a

@@ -6,7 +6,7 @@ per branch, scores each on the 0-14 rubric (11.1), prunes weak branches, and
 keeps the top `BEAM_WIDTH`. Includes a governance pre-screen that rejects
 ungoverned hypotheses (no certified metric/table) without spending query budget.
 
-Used by src/workflow.py (the LangGraph controller).
+Used by workflows/graph.py (the LangGraph controller).
 """
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
-from . import catalog, graph, guardrails
+from skills import catalog_skill as catalog, graph_skill as graph, sql_skill as guardrails
 
 BEAM_WIDTH = 2          # Plan section 11.1
 DEPTH_LIMIT = 2

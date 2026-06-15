@@ -15,8 +15,11 @@ from typing import Any, TypedDict
 import pandas as pd
 from langgraph.graph import END, START, StateGraph
 
-from . import agents, catalog, graph, guardrails, insights, llm, themes, tot
-from .audit import AuditLog
+from agents import team as agents
+from skills import catalog_skill as catalog, graph_skill as graph, sql_skill as guardrails
+from skills import llm_skill as llm, tot_skill as tot
+from skills.audit_skill import AuditLog
+from workflows import insights, themes
 
 
 class WState(TypedDict, total=False):
