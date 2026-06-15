@@ -53,19 +53,51 @@ tables:
   fact_customer_contacts:
     grain: "one row per contact"
     keys: [contact_id]
-    columns: [contact_id, date, reason_code, channel, region]
-    allowed_joins: [fact_orders]
+    columns: [contact_id, date, reason_code, channel, region, order_id, resolution_status, wait_time_minutes]
+    allowed_joins: [fact_orders, dim_contact_reason]
     freshness: "T-1"
     owner: "Customer Service"
-    approved_use: "Service-contact spikes and issue linkage."
+    approved_use: "Service-contact spikes and issue linkage; order-level traceback to fulfillment."
   fact_finance_daily:
     grain: "one row per date/channel/category"
     keys: [date, channel, category_id]
-    columns: [date, channel, category_id, gross_sales, returns, tax, shipping, adjustments, net_revenue]
+    columns: [date, channel, category_id, gross_sales, returns, tax, shipping, adjustments, net_revenue, margin_proxy]
     allowed_joins: [dim_category]
     freshness: "T-1"
     owner: "Finance"
-    approved_use: "Gross-to-net reconciliation."
+    approved_use: "Gross-to-net reconciliation; category margin-proxy caveat."
+  fact_returns:
+    grain: "one row per returned line"
+    keys: [return_id]
+    columns: [return_id, order_id, product_id, category_id, return_date, return_reason, return_amount]
+    allowed_joins: [fact_orders, fact_order_items, dim_product, dim_category]
+    freshness: "T-1"
+    owner: "Finance"
+    approved_use: "Return rates and gross-to-net return pressure by category."
+  fact_campaign_daily:
+    grain: "one row per campaign/day"
+    keys: [campaign_id, date]
+    columns: [campaign_id, date, channel, spend, impressions, clicks, sessions, orders, conversion_rate, campaign_owner]
+    allowed_joins: [dim_campaign, fact_sessions]
+    freshness: "T-1"
+    owner: "Marketing"
+    approved_use: "Campaign spend/efficiency; paid-channel conversion investigation."
+  fact_vendor_scorecard:
+    grain: "one row per vendor/category/day"
+    keys: [date, vendor_id, category_id]
+    columns: [date, vendor_id, category_id, stockout_impact, lost_sales_proxy, return_rate, margin_proxy, service_issues]
+    allowed_joins: [dim_vendor, dim_category, dim_product]
+    freshness: "T-1"
+    owner: "Merchandising"
+    approved_use: "Vendor/category partner risk; stockout impact and lost-sales proxy."
+  fact_margin_proxy_daily:
+    grain: "one row per category/day"
+    keys: [date, category_id]
+    columns: [date, category_id, net_sales, discount_amount, return_amount, margin_proxy]
+    allowed_joins: [dim_category]
+    freshness: "T-1"
+    owner: "Finance"
+    approved_use: "Category margin-proxy trend; discount/return pressure (proxy, not GL)."
   dim_product:
     grain: "one row per product"
     keys: [product_id]
@@ -84,3 +116,21 @@ tables:
     columns: [campaign_id, campaign_name, channel, start_date, end_date, spend, audience, owner]
     owner: "Marketing"
     approved_use: "Campaign attributes for marketing investigation."
+  dim_vendor:
+    grain: "one row per vendor"
+    keys: [vendor_id]
+    columns: [vendor_id, vendor_name, cpg_partner_flag, category_owner, contact_group]
+    owner: "Merchandising"
+    approved_use: "Vendor attributes; CPG-partner alert routing."
+  dim_contact_reason:
+    grain: "one row per contact reason code"
+    keys: [reason_code]
+    columns: [reason_code, reason_group, related_driver, escalation_flag]
+    owner: "Customer Service"
+    approved_use: "Map service reason codes to governed drivers for routing."
+  dim_region:
+    grain: "one row per region"
+    keys: [region]
+    columns: [region, zone_id, carrier_group, fulfillment_owner]
+    owner: "Fulfillment Operations"
+    approved_use: "Region attributes; carrier grouping and fulfillment ownership."

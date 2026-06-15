@@ -55,13 +55,16 @@ BASE_SHARE = {  # per-channel session share
 # Seeded scenario knobs (evaluation-only knowledge).
 PAID_SOCIAL_TARGET_SHARE = 0.22        # scenario 2: traffic shift
 SCEN = {
-    "paid_social_conv_mult": 0.70,     # scenario 2: converts below baseline
+    "paid_social_conv_mult": 0.78,     # scenario 2: converts below baseline
     "inventory_category": "C01",       # scenario 3: Electronics stockout
-    "inventory_conv_mult": 0.65,
+    "inventory_conv_mult": 0.78,
     "fulfillment_region": "west",      # scenario 4: delays / fewer options
     "fulfillment_conv_mult": 0.88,
     "funnel_category": "C05",          # scenario 5: Toys cart->purchase drop
-    "funnel_conv_mult": 0.85,
+    "funnel_conv_mult": 0.90,
+    "vendor_id": "V04",                # Phase III: seeded high-impact CPG partner
+    "vendor_category": "C01",          # ... in Electronics
+    "margin_weak_category": "C04",     # Phase III: weak margin-proxy category (Beauty)
 }
 
 
@@ -78,13 +81,18 @@ def _build_dims(fake: Faker):
     products = []
     for i in range(60):
         cat = CAT_IDS[i % len(CAT_IDS)]
+        vendor = f"V{np.random.randint(1, 16):02d}"
+        # Pin the seeded CPG partner (V04) onto the Electronics category (C01) so the
+        # vendor scorecard and dim_product agree on who owns the seeded stockout.
+        if cat == SCEN["vendor_category"] and i < len(CAT_IDS):
+            vendor = SCEN["vendor_id"]
         products.append({
             "product_id": f"P{i:03d}", "product_name": fake.catch_phrase()[:40],
             "category_id": cat, "brand": fake.company(),
             "price_band": np.random.choice(["value", "mid", "premium"]),
             "price": round(float(np.random.uniform(8, 480)), 2),
-            "vendor_id": f"V{np.random.randint(1, 16):02d}",
-            "cpg_partner_flag": bool(np.random.random() < 0.3),
+            "vendor_id": vendor,
+            "cpg_partner_flag": bool(vendor == SCEN["vendor_id"] or np.random.random() < 0.3),
         })
     dim_product = pd.DataFrame(products)
 
@@ -102,7 +110,41 @@ def _build_dims(fake: Faker):
             "audience": np.random.choice(["prospecting", "retargeting", "loyalty"]),
             "owner": camp_owner})
     dim_campaign = pd.DataFrame(campaigns)
-    return dim_category, dim_product, dim_campaign
+
+    # Phase III: one governed vendor row per vendor_id used in dim_product. V04 is the
+    # seeded high-impact CPG partner for Electronics (category C01).
+    vendor_ids = sorted(dim_product.vendor_id.unique().tolist())
+    vend_rows = []
+    for vid in vendor_ids:
+        is_partner = vid == SCEN["vendor_id"]
+        vend_rows.append({
+            "vendor_id": vid, "vendor_name": fake.company()[:40],
+            "cpg_partner_flag": bool(is_partner or np.random.random() < 0.25),
+            "category_owner": "Merchandising",
+            "contact_group": "Vendor Partner Management"})
+    dim_vendor = pd.DataFrame(vend_rows)
+
+    # Phase II: contact-reason dimension. Reason codes must cover those
+    # fact_customer_contacts uses; map each to a governed driver.
+    reason_map = [
+        ("delivery_delay", "fulfillment", "fulfillment_constraints", True),
+        ("cancellation", "fulfillment", "fulfillment_constraints", True),
+        ("product_issue", "merchandising", "inventory_availability", False),
+        ("billing", "finance", "finance_caveat", False),
+        ("other", "general", "service_signal", False),
+    ]
+    dim_contact_reason = pd.DataFrame(
+        [{"reason_code": rc, "reason_group": rg, "related_driver": rd,
+          "escalation_flag": esc} for rc, rg, rd, esc in reason_map])
+
+    # Phase II: one row per region with zone / carrier / owner attributes.
+    dim_region = pd.DataFrame([{
+        "region": reg, "zone_id": f"Z{i+1:02d}",
+        "carrier_group": np.random.choice(["national_a", "national_b", "regional"]),
+        "fulfillment_owner": "Fulfillment Operations"} for i, reg in enumerate(REGIONS)])
+
+    return (dim_category, dim_product, dim_campaign, dim_vendor,
+            dim_contact_reason, dim_region)
 
 
 def generate(seed: int = SEED) -> dict[str, pd.DataFrame]:
@@ -113,13 +155,20 @@ def generate(seed: int = SEED) -> dict[str, pd.DataFrame]:
 
     dates = _dates()
     target_day = dates[-1]
-    dim_category, dim_product, dim_campaign = _build_dims(fake)
+    (dim_category, dim_product, dim_campaign, dim_vendor,
+     dim_contact_reason, dim_region) = _build_dims(fake)
     paid_campaigns = {ch: dim_campaign[dim_campaign.channel == ch].campaign_id.tolist()
                       for ch in ["paid_search", "paid_social", "email"]}
 
     sess_frames, order_frames, item_frames, event_frames = [], [], [], []
     inv_rows, ful_rows, fin_rows, contact_rows = [], [], [], []
+    return_rows, camp_rows, vendor_rows, margin_rows = [], [], [], []
     order_counter = 0
+
+    # Phase III: map each category to the vendors that supply it, so the daily
+    # vendor scorecard is consistent with dim_product's vendor->category wiring.
+    cat_vendors = {cid: sorted(dim_product[dim_product.category_id == cid].vendor_id.unique().tolist())
+                   for cid in CAT_IDS}
 
     for d in dates:
         is_t = d == target_day
@@ -159,7 +208,6 @@ def generate(seed: int = SEED) -> dict[str, pd.DataFrame]:
             if mask.any() and paid_campaigns[ch]:
                 camp_arr[mask] = rng.choice(paid_campaigns[ch], size=int(mask.sum()))
 
-        base = len(sum((len(f) for f in sess_frames) for _ in [0]) if False else [])  # noqa
         sid = np.array([f"s{d.isoformat()}_{i}" for i in range(n)], dtype=object)
         sess_frames.append(pd.DataFrame({
             "session_id": sid, "date": d, "channel": ch_arr, "campaign_id": camp_arr,
@@ -167,18 +215,21 @@ def generate(seed: int = SEED) -> dict[str, pd.DataFrame]:
             "converted": converted}))
 
         # ---- orders (numerator) from converted sessions ----
+        day_orders = None
         conv_idx = np.where(converted)[0]
         if len(conv_idx):
             oids = np.array([f"o{order_counter + j}" for j in range(len(conv_idx))], dtype=object)
             order_counter += len(conv_idx)
             ftype = rng.choice(FULFILLMENT_TYPES, size=len(conv_idx), p=[0.6, 0.25, 0.15])
             gross = np.round(rng.uniform(15, 420, len(conv_idx)), 2)
-            order_frames.append(pd.DataFrame({
+            returned = rng.random(len(conv_idx)) < 0.06
+            day_orders = pd.DataFrame({
                 "order_id": oids, "session_id": sid[conv_idx], "date": d,
                 "channel": ch_arr[conv_idx], "region": reg_arr[conv_idx],
                 "category_id": cat_arr[conv_idx], "order_status": "completed",
                 "fulfillment_type": ftype, "gross_amount": gross,
-                "returned": rng.random(len(conv_idx)) < 0.06}))
+                "returned": returned})
+            order_frames.append(day_orders)
             # order items (1-3 per order)
             nit = rng.integers(1, 4, len(conv_idx))
             it_order, it_cat, it_qty, it_amt = [], [], [], []
@@ -191,6 +242,20 @@ def generate(seed: int = SEED) -> dict[str, pd.DataFrame]:
                 "order_item_id": [f"oi{order_counter}_{j}" for j in range(len(it_order))],
                 "order_id": it_order, "product_id": rng.choice(dim_product.product_id, len(it_order)),
                 "category_id": it_cat, "quantity": it_qty, "item_amount": it_amt}))
+
+            # ---- fact_returns: the ~6% of orders flagged returned (Phase II) ----
+            ret_idx = np.where(returned)[0]
+            if len(ret_idx):
+                reasons = rng.choice(
+                    ["damaged", "wrong_item", "not_as_described", "changed_mind", "late_delivery"],
+                    size=len(ret_idx), p=[0.22, 0.18, 0.20, 0.30, 0.10])
+                # late_delivery returns lean toward the constrained west region on yesterday
+                ret_amt = np.round(gross[ret_idx] * rng.uniform(0.4, 1.0, len(ret_idx)), 2)
+                return_rows.append(pd.DataFrame({
+                    "return_id": [f"r{oids[j]}" for j in ret_idx],
+                    "order_id": oids[ret_idx], "product_id": rng.choice(dim_product.product_id, len(ret_idx)),
+                    "category_id": cat_arr[conv_idx][ret_idx], "return_date": d,
+                    "return_reason": reasons, "return_amount": ret_amt}))
 
         # ---- funnel events (scenario 5 reflected via converted toys drop) ----
         # product_view: all; add_to_cart: ~35% (+ all converted); checkout_start:
@@ -245,23 +310,118 @@ def generate(seed: int = SEED) -> dict[str, pd.DataFrame]:
             returns = gross * float(rng.uniform(0.04, 0.10))
             tax = gross * 0.07; shipping = gross * 0.03
             adj = gross * float(rng.uniform(-0.01, 0.01))
+            net = gross - returns + tax + shipping + adj
+            # margin proxy: gross-margin-ish ratio; one category runs structurally weak
+            margin = float(rng.uniform(0.34, 0.46))
+            if cid == SCEN["margin_weak_category"]:
+                margin = float(rng.uniform(0.12, 0.20))
             fin_rows.append({"date": d, "channel": "all", "category_id": cid,
                              "gross_sales": round(gross, 2), "returns": round(returns, 2),
                              "tax": round(tax, 2), "shipping": round(shipping, 2),
                              "adjustments": round(adj, 2),
-                             "net_revenue": round(gross - returns + tax + shipping + adj, 2)})
+                             "net_revenue": round(net, 2),
+                             "margin_proxy": round(margin, 4)})
 
         # ---- customer contacts (light; rising over the ramp, spike on target) ----
+        # On yesterday, delivery_delay contacts concentrate in the constrained west
+        # region and link to a real west order so service<->fulfillment is traceable.
+        west_delay_orders = (day_orders[day_orders.region == SCEN["fulfillment_region"]]
+                             .order_id.tolist() if day_orders is not None else [])
         base_contacts = int(rng.normal(60, 10) * (1 + 0.5 * ramp))
         if is_t:
             base_contacts = int(base_contacts * 1.5)
         for _ in range(max(base_contacts, 0)):
-            reason = rng.choice(["delivery_delay", "cancellation", "product_issue", "billing", "other"],
-                                p=[0.3, 0.2, 0.2, 0.1, 0.2])
+            if is_t:  # yesterday: more delivery_delay, skewed west
+                reason = rng.choice(["delivery_delay", "cancellation", "product_issue", "billing", "other"],
+                                    p=[0.42, 0.20, 0.15, 0.08, 0.15])
+            else:
+                reason = rng.choice(["delivery_delay", "cancellation", "product_issue", "billing", "other"],
+                                    p=[0.3, 0.2, 0.2, 0.1, 0.2])
+            reason = str(reason)
+            if reason in ("delivery_delay", "cancellation") and is_t and rng.random() < 0.7:
+                region = SCEN["fulfillment_region"]
+            else:
+                region = str(rng.choice(REGIONS))
+            # link delivery_delay/cancellation contacts to a real west order where possible
+            order_id = None
+            if reason in ("delivery_delay", "cancellation") and region == SCEN["fulfillment_region"] \
+                    and west_delay_orders:
+                order_id = str(rng.choice(west_delay_orders))
             contact_rows.append({"contact_id": f"c{len(contact_rows)}", "date": d,
-                                 "reason_code": str(reason),
+                                 "reason_code": reason,
                                  "channel": str(rng.choice(["phone", "chat", "email"])),
-                                 "region": str(rng.choice(REGIONS))})
+                                 "region": region, "order_id": order_id,
+                                 "resolution_status": str(rng.choice(
+                                     ["resolved", "pending", "escalated"], p=[0.6, 0.3, 0.1])),
+                                 "wait_time_minutes": round(float(
+                                     rng.uniform(2, 15) + (8 * ramp if is_t else 0)), 1)})
+
+        # ---- fact_campaign_daily: per campaign/day aggregate from sessions/orders ----
+        sess_today = sess_frames[-1]
+        for camp_id in dim_campaign.campaign_id:
+            if camp_id == "none":
+                continue
+            cmask = sess_today.campaign_id.values == camp_id
+            sessions = int(cmask.sum())
+            if sessions == 0:
+                continue
+            ch = dim_campaign.loc[dim_campaign.campaign_id == camp_id, "channel"].iloc[0]
+            c_orders = int(sess_today.converted.values[cmask].sum())
+            clicks = sessions  # one session per paid click in this synthetic model
+            impressions = int(clicks / float(rng.uniform(0.02, 0.05)))
+            spend = round(clicks * float(rng.uniform(0.4, 1.6)), 2)
+            conv_rate = c_orders / sessions if sessions else 0.0
+            camp_rows.append({"campaign_id": camp_id, "date": d, "channel": ch,
+                              "spend": spend, "impressions": impressions, "clicks": clicks,
+                              "sessions": sessions, "orders": c_orders,
+                              "conversion_rate": round(conv_rate, 4),
+                              "campaign_owner": "Marketing"})
+
+        # ---- fact_vendor_scorecard: one row per vendor/category/day (Phase III) ----
+        # Built from the day's category stockout + orders/returns so the seeded CPG
+        # partner (V04 in C01) shows elevated stockout_impact + lost_sales_proxy on
+        # yesterday, consistent with the inventory scenario.
+        stockout_by_cat = {r["category_id"]: r["stockout_rate"] for r in inv_rows if r["date"] == d}
+        for cid in CAT_IDS:
+            cat_gross = float(day_orders[day_orders.category_id == cid].gross_amount.sum()) \
+                if day_orders is not None else 0.0
+            stockout = stockout_by_cat.get(cid, 0.04)
+            for vid in cat_vendors[cid]:
+                seeded = vid == SCEN["vendor_id"] and cid == SCEN["vendor_category"]
+                # split category demand across its vendors as a rough share
+                share = 1.0 / max(len(cat_vendors[cid]), 1)
+                stockout_impact = round(stockout * (1.0 + (0.5 if seeded else 0.0)), 4)
+                lost_sales = round(cat_gross * share * stockout_impact, 2)
+                if is_t and seeded:
+                    stockout_impact = round(min(stockout * 1.4, 0.6), 4)
+                    lost_sales = round(cat_gross * share * stockout_impact * 2.2, 2)
+                ret_rate = round(float(rng.uniform(0.04, 0.10)) + (0.03 if seeded else 0.0), 4)
+                margin = float(rng.uniform(0.30, 0.46))
+                if cid == SCEN["margin_weak_category"]:
+                    margin = float(rng.uniform(0.12, 0.20))
+                service = int(rng.integers(0, 4) + (rng.integers(3, 8) if (is_t and seeded) else 0))
+                vendor_rows.append({"date": d, "vendor_id": vid, "category_id": cid,
+                                    "stockout_impact": stockout_impact,
+                                    "lost_sales_proxy": lost_sales,
+                                    "return_rate": ret_rate, "margin_proxy": round(margin, 4),
+                                    "service_issues": service})
+
+        # ---- fact_margin_proxy_daily: one row per category/day (Phase III) ----
+        # Net sales less discount/return pressure; the weak category runs structurally
+        # low margin, mirroring fact_finance_daily's margin_proxy.
+        day_fin = {r["category_id"]: r for r in fin_rows if r["date"] == d}
+        day_ret = {}
+        if return_rows and (return_rows[-1]["return_date"].iloc[0] == d):
+            day_ret = return_rows[-1].groupby("category_id").return_amount.sum().to_dict()
+        for cid in CAT_IDS:
+            fr = day_fin.get(cid)
+            net = float(fr["net_revenue"]) if fr else float(rng.uniform(8000, 24000))
+            discount = round(net * float(rng.uniform(0.03, 0.09)), 2)
+            ret_amt = round(float(day_ret.get(cid, net * float(rng.uniform(0.02, 0.06)))), 2)
+            margin = float(fr["margin_proxy"]) if fr else float(rng.uniform(0.30, 0.46))
+            margin_rows.append({"date": d, "category_id": cid, "net_sales": round(net, 2),
+                                "discount_amount": discount, "return_amount": ret_amt,
+                                "margin_proxy": round(margin, 4)})
 
     frames = {
         "fact_sessions": pd.concat(sess_frames, ignore_index=True),
@@ -272,7 +432,12 @@ def generate(seed: int = SEED) -> dict[str, pd.DataFrame]:
         "fact_fulfillment": pd.DataFrame(ful_rows),
         "fact_finance_daily": pd.DataFrame(fin_rows),
         "fact_customer_contacts": pd.DataFrame(contact_rows),
+        "fact_returns": pd.concat(return_rows, ignore_index=True) if return_rows else pd.DataFrame(),
+        "fact_campaign_daily": pd.DataFrame(camp_rows),
+        "fact_vendor_scorecard": pd.DataFrame(vendor_rows),
+        "fact_margin_proxy_daily": pd.DataFrame(margin_rows),
         "dim_category": dim_category, "dim_product": dim_product, "dim_campaign": dim_campaign,
+        "dim_vendor": dim_vendor, "dim_contact_reason": dim_contact_reason, "dim_region": dim_region,
     }
     frames["eval_expected_outcomes"] = _expected_outcomes(target_day)
     frames["_meta"] = pd.DataFrame([{
