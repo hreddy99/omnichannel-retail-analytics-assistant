@@ -199,8 +199,7 @@ def _graph_figure():
     return fig
 
 
-def page_architecture():
-    st.title("🏗️ Architecture")
+def _arch_main():
     st.write("LangGraph is the central controller. Tools and knowledge layers do not act "
              "independently — retrieval, validation, graph traversal, ToT, SQL, and synthesis "
              "are explicit workflow nodes. YAML governs truth; the LLM is never a source of truth.")
@@ -323,6 +322,13 @@ def _tab_business(t):
     st.write(a["summary"])
     if intent not in (None, "overall") and a.get("conversion_context"):
         st.caption("Context: " + a["conversion_context"])
+
+    rv = a.get("review")
+    if rv:
+        icon = "🔴" if rv["risk_level"] == "high" else "🟠" if rv["risk_level"] == "medium" else "🟢"
+        st.warning(f"{icon} **Human review required ({rv['risk_level']} risk)** — routed to "
+                   f"**{rv['impacted_owner']}**. {rv['reason']}. Recommended (pending review): "
+                   f"{rv['recommended_action']}")
 
     if intent in ("analytics", "themed"):
         mets = a.get("metrics") or a.get("signals", [])
@@ -488,6 +494,11 @@ def _tab_audit(t):
     st.markdown("**Decision log (step-by-step):**")
     for s in t["steps"]:
         st.markdown(f"{'✅' if s['ok'] else '⚠️'} **{s['node']}** — {s['detail']}")
+    if getattr(audit, "reviews", None):
+        st.markdown("**Human-review requests (safety gate):**")
+        st.dataframe(pd.DataFrame(audit.reviews)[
+            ["risk_level", "impacted_owner", "recommended_action", "reason", "status"]],
+            width="stretch", hide_index=True)
     st.markdown("**Audit event trail (section 17.2 schema):**")
     cols = ["event_id", "workflow_node", "decision_type", "tool_name", "output_summary",
             "score_or_confidence", "status"]
@@ -657,12 +668,8 @@ def page_interactive_plan():
 # ==========================================================================
 # PAGE: Diagrams
 # ==========================================================================
-def page_diagrams():
+def _arch_diagrams():
     from app import diagrams
-    st.title("📐 Architecture, Agents & Skills")
-    st.caption("Full reference architecture, agent delegation, and the flow diagrams; "
-               "plus the agent and skill definitions that document the system.")
-
     st.header("Flow diagrams")
     for title, desc, dot in diagrams.DIAGRAMS:
         st.subheader(title)
@@ -696,6 +703,20 @@ def page_diagrams():
         with st.expander(f"🧠 {s['name']} — {s['description']}"):
             st.code(f"{s['folder']}/\n" + "\n".join(f"  {f}" for f in s["files"]), language="text")
             st.markdown(s["instructions"])
+
+    st.header("Typed agent contracts (state model)")
+    st.caption("Agents communicate through typed shared state, not free-form chat (Plan §6). "
+               "Each agent receives a scoped task and returns a structured finding; the "
+               "Critic/ToT works in branch state; every step emits an audit event; and safety "
+               "conditions raise a human-review request. Defined in `agents/contracts.py`.")
+    import dataclasses
+    from agents import contracts as _contracts
+    for cls in (_contracts.AgentTask, _contracts.AgentFinding, _contracts.BranchState,
+                _contracts.AuditEvent, _contracts.HumanReviewRequest):
+        fields = ", ".join(f.name for f in dataclasses.fields(cls))
+        with st.expander(f"📦 {cls.__name__}"):
+            st.caption((cls.__doc__ or "").strip().split("\n")[0])
+            st.code(f"{cls.__name__}({fields})", language="python")
 
 
 # ==========================================================================
@@ -763,16 +784,24 @@ def page_evaluation():
 # ==========================================================================
 # Navigation
 # ==========================================================================
+def page_architecture():
+    st.title("🏗️ Architecture")
+    t_sys, t_flows = st.tabs(
+        ["System, knowledge graph & multi-agent design", "Flow diagrams · agents · skills"])
+    with t_sys:
+        _arch_main()
+    with t_flows:
+        _arch_diagrams()
+
+
+# The plan prescribes a focused 5-section UI:
+# Overview · Architecture · Data Catalog · Live Demo · Evaluation.
 PAGES = {
     "🏠 Overview": page_overview,
-    "✅ Feasibility Review": page_feasibility,
     "🏗️ Architecture": page_architecture,
-    "📐 Architecture, Agents & Skills": page_diagrams,
     "📚 Data Catalog": page_catalog,
-    "🗺️ Step-by-Step Plan": page_plan,
     "🔬 Live Demo": page_demo,
     "🧪 Evaluation": page_evaluation,
-    "📄 Interactive Plan": page_interactive_plan,
 }
 
 st.sidebar.title("🛍️ Retail Analytics Assistant")
