@@ -40,11 +40,22 @@ def _table(rows, cols):
     st.dataframe(pd.DataFrame(rows, columns=cols), width="stretch", hide_index=True)
 
 
-_CCY = ("sales", "revenue", "gross", "net", "spend", "returns", "amount", "impact")
+# Bulk-dollar columns (whole-dollar) and per-unit-dollar columns (with cents).
+_CCY = ("sales", "revenue", "gross", "net", "spend", "returns", "amount",
+        "lost_sales", "gmv", "cac")
+_CCY_CENTS = ("price", "order_value", "aov", "cost_per", "per_order", "per_unit", "unit_cost")
+# Count-like columns render as plain integers (no $, no decimals).
+_COUNTS = ("orders", "sessions", "contacts", "issues", "count", "units", "items",
+           "cancellations", "returns_count", "lost_orders")
 
 
 def _col_fmt(name, s):
-    """Return a pandas format string/callable for a column based on its name/values."""
+    """Return a pandas format string/callable for a column based on its name/values.
+
+    Precedence: percent/rate → per-unit currency (cents) → bulk currency (whole $) →
+    counts (integer) → delay/days (2dp) → integer/float fallback. So $ and thousands
+    separators appear consistently wherever a column represents money.
+    """
     n = str(name).lower()
     try:
         kind = s.dtype.kind
@@ -52,14 +63,17 @@ def _col_fmt(name, s):
         kind = "O"
     if kind not in "if":
         return None
-    if any(k in n for k in ("price", "order_value", "aov")):
-        return "${:,.2f}"
-    if any(k in n for k in _CCY) and "rate" not in n and "pct" not in n:
-        return "${:,.0f}"
-    if any(k in n for k in ("pct", "rate", "share", "conv")):
+    # percentages / rates / ratios first (so 'return_rate', 'margin_pct' never read as $)
+    if any(k in n for k in ("pct", "rate", "share", "conv", "margin")):
         mx = float(s.dropna().abs().max()) if len(s.dropna()) else 0.0
         return (lambda v: f"{v * 100:.1f}%") if mx <= 1.5 else "{:.1f}%"
-    if any(k in n for k in ("delay", "days", "option")):
+    if any(k in n for k in _CCY_CENTS):
+        return "${:,.2f}"
+    if any(k in n for k in _CCY):
+        return "${:,.0f}"
+    if any(k in n for k in _COUNTS):
+        return "{:,.0f}"
+    if any(k in n for k in ("delay", "days", "option", "wait", "minutes")):
         return "{:.2f}"
     if kind == "i":
         return "{:,.0f}"
@@ -345,7 +359,31 @@ def _tab_business(t):
         st.info(f"**Owner:** {a.get('owner', '-')} · {a.get('recommendation', '')}")
         return
 
-    if intent == "overall":
+    if intent == "briefing":
+        issues = a.get("briefing_issues", [])
+        owners = sorted({i["owner"] for i in issues})
+        act_now = [i for i in issues if i["priority"] == "high"]
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Issues found", f"{len(issues)}")
+        m2.metric("Act-now priorities", f"{len(act_now)}")
+        m3.metric("Teams involved", f"{len(owners)}")
+        fig = charts.evidence_figure(t)
+        if fig is not None:
+            st.plotly_chart(fig, width="stretch", key="biz_briefing_chart")
+        _tag = {"high": ("🔴 Act now", "#dc2626"), "medium": ("🟠 Investigate", "#d97706"),
+                "monitor": ("🟢 Monitor", "#16a34a")}
+        st.markdown("**Cross-functional issues — ranked by evidence, routed to owners:**")
+        for i in issues:
+            label, c = _tag.get(i["priority"], ("Investigate", "#64748b"))
+            st.markdown(f"<div style='border-left:5px solid {c};padding:6px 12px;margin:5px 0;"
+                        f"background:#f8fafc;border-radius:4px'><b>{label}</b> · <b>{i['label']}</b> "
+                        f"→ <b>{i['owner']}</b> · <span style='color:{c}'>{i['confidence']}</span> "
+                        f"(score {i['score']}/14)<br><span style='font-size:0.9em;color:#475569'>"
+                        f"{i['finding']}</span><br><span style='font-size:0.9em'>"
+                        f"<b>Recommended:</b> {i['action']}</span></div>", unsafe_allow_html=True)
+        st.info("**Recommendation:** " + a["recommendation"])
+
+    elif intent == "overall":
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("Yesterday", f"{bl['target']:.2%}")
         m2.metric("Prior 7-day avg", f"{bl['baseline']:.2%}")
@@ -567,6 +605,7 @@ def page_demo():
     st.caption(f"LLM: {probe['detail']}")
 
     options = (["— Conversion-drop investigation —"] + P.DEMO_QUESTIONS
+               + ["— Executive briefings (multi-agent, cross-functional) —"] + P.BRIEFING_QUESTIONS
                + ["— Direct analytics questions —"] + insights.questions()
                + ["— Themed reviews (health / trend / risk) —"] + themes.questions()
                + ["✍️ Custom question…"])
@@ -758,6 +797,7 @@ def _eval_results():
     rows = list(data_validation.run_checks())
     # classification routing checks
     expected = ([(q, "overall" if i == 0 else "driver") for i, q in enumerate(P.DEMO_QUESTIONS[:8])]
+                + [(q, "briefing") for q in P.BRIEFING_QUESTIONS]
                 + [(q, "analytics") for q in insights.questions()]
                 + [(q, "themed") for q in themes.questions()])
     ok = 0

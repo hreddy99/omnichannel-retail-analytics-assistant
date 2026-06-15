@@ -71,15 +71,35 @@ PRIMARY_DRIVERS_SET = {"campaign_mix", "inventory_availability",
 CORROBORATING_SET = {"service_signal", "finance_caveat", "vendor_insight"}
 
 # Owner-routed recommended actions per driver (human-reviewed; no operational writes).
+# Each names a concrete next step, who does it, and roughly when — plain language,
+# not jargon. The specific numbers behind each action are shown as the "basis"
+# (the validated finding) next to it in the summary, so the action is grounded.
 RECOMMENDATIONS = {
-    "campaign_mix": "Rebalance paid-social spend and audit campaign targeting/creative quality.",
-    "inventory_availability": "Expedite replenishment and re-enable online availability for the affected category.",
-    "fulfillment_constraints": "Restore fulfillment options and delivery SLAs in the affected region.",
-    "funnel_behavior": "Audit the on-site checkout funnel for the affected segment.",
-    "service_signal": "Brief support on the contact spike and confirm the operational root cause.",
-    "finance_caveat": "Reconcile gross-to-net before reporting revenue impact.",
-    "vendor_insight": "Alert the category/vendor partner about the stockout impact.",
+    "campaign_mix": "Rebalance spend away from paid social back toward higher-converting "
+                    "channels this week, and have Marketing audit the new campaign's targeting "
+                    "and creative before scaling it further.",
+    "inventory_availability": "Expedite replenishment for the affected categories today and "
+                    "re-enable online availability, so high-traffic products stop turning into "
+                    "stockouts at checkout.",
+    "fulfillment_constraints": "Add carrier capacity and restore delivery options in the affected "
+                    "region to bring promised delivery dates back, and proactively update ETAs on "
+                    "in-flight orders.",
+    "funnel_behavior": "Have Digital Analytics replay the affected segment's checkout funnel to "
+                    "pinpoint the failing step (payment, shipping, or validation) and fix it before "
+                    "the next campaign push.",
+    "service_signal": "Brief the support team on the contact spike, pre-stage responses for the "
+                    "root-cause issue, and confirm whether it traces back to the fulfillment or "
+                    "inventory problem.",
+    "finance_caveat": "Reconcile gross-to-net before reporting revenue impact, so returns, "
+                    "discounts, and tax/shipping aren't mistaken for an operational decline.",
+    "vendor_insight": "Open a partner review with the affected vendor on the stockout impact, and "
+                    "agree on a replenishment commitment and backup supply for the at-risk category.",
 }
+
+
+def grounded_action(driver_key: str) -> str:
+    """Return the owner-routed, plain-language next step for a driver."""
+    return RECOMMENDATIONS.get(driver_key, "Review with the owner and confirm before acting.")
 
 
 # --------------------------------------------------------------------------
@@ -92,8 +112,17 @@ _INTENT_LABEL = {
     "trust": "definition & evidence path",
     "caveats": "caveats & data freshness",
     "driver": "specific driver",
+    "briefing": "cross-functional executive briefing",
     "overall": "overall conversion drop",
 }
+# Cross-business questions that should fan out the whole analyst team and return a
+# ranked, owner-routed executive briefing (NOT the single conversion-drop narrative).
+_BRIEFING_PATTERN = (
+    r"executive (summary|briefing|overview|update)|brief (me|us|the team|leadership)|"
+    r"leadership (briefing|update|summary)|across (the|all)? ?(business|company|org|"
+    r"organi[sz]ation|teams|functions|board)|cross[- ]functional|company[- ]wide|"
+    r"state of the business|biggest (risks?|issues?|problems?)|top (risks?|issues?|priorities)|"
+    r"where should (we|i) focus|what needs (my |our )?attention|health of the (business|company)")
 # Order matters: more specific signals (vendor / finance / service / funnel) are
 # checked before the broad inventory/fulfillment patterns so e.g. "which VENDOR
 # should we alert about stockouts?" routes to vendor, not inventory.
@@ -118,6 +147,9 @@ def classify_intent(question: str):
         return "trust", None
     if re.search(r"caveat|freshness|trust this|trusting|limit|how confident|reliab|stale", q):
         return "caveats", None
+    # Cross-business briefing wins over single-driver focus (it spans every domain).
+    if re.search(_BRIEFING_PATTERN, q):
+        return "briefing", None
     for key, pat in _FOCUS_PATTERNS:
         if re.search(pat, q):
             return "driver", key
@@ -417,9 +449,16 @@ def n_human_review(state: WState) -> dict:
     # a human-reviewed decision rather than an automatic system change.
     reasons.append("recommended actions are business-impacting and require owner review before execution")
 
-    top = (likely or beam or deferred)
+    # For a cross-business briefing the highest-priority issue may be a corroborating
+    # signal (service / vendor / finance), so rank every qualified branch by evidence.
+    if state.get("intent") == "briefing":
+        corroborating = state.get("corroborating", [])
+        top = sorted(beam + deferred + corroborating,
+                     key=lambda b: (b.total, abs(b.signal)), reverse=True)
+    else:
+        top = (likely or beam or deferred)
     impacted_owner = top[0].owner if top else "Analytics"
-    recommended_action = RECOMMENDATIONS.get(top[0].driver, "Review with the owner before acting.") if top else \
+    recommended_action = grounded_action(top[0].driver) if top else \
         "Escalate as needs-analyst-review with recommended next checks."
     review = a.create_review_request(
         reason="; ".join(reasons), risk_level=risk, impacted_owner=impacted_owner,
@@ -455,7 +494,14 @@ def n_synthesize(state: WState) -> dict:
     pri_map = {id(b): ("high" if b in beam else "medium") for b in beam + deferred}
     pri_map.update({id(b): "monitor" for b in corroborating})
     ordered = beam + deferred + corroborating
-    if focus:
+    if intent == "briefing":
+        # Cross-business briefing: rank EVERY domain's finding together by evidence
+        # strength so the biggest issue leads — even if it's a service/vendor/finance
+        # signal — rather than forcing the conversion-drop framing.
+        ordered = sorted(beam + deferred + corroborating,
+                         key=lambda b: (b.total, abs(b.signal)), reverse=True)
+        pri_map = {id(b): ("high" if i < 2 else "medium") for i, b in enumerate(ordered)}
+    elif focus:
         ordered = sorted(ordered, key=lambda b: 0 if b.driver == focus else 1)
     recos = []
     for b in ordered:
@@ -469,7 +515,20 @@ def n_synthesize(state: WState) -> dict:
     # ---- headline + factual lead, TUNED to the question intent ----------
     all_branches = beam + deferred + corroborating + pruned
     fb = next((b for b in all_branches if b.driver == focus), None) if focus else None
-    if intent == "actions":
+    if intent == "briefing":
+        n_issues = len(ordered)
+        top = ordered[0] if ordered else None
+        if top is not None:
+            headline = (f"Executive briefing — {n_issues} cross-functional issue"
+                        f"{'s' if n_issues != 1 else ''} need attention; the top priority is "
+                        f"{top.label} ({top.owner}).")
+            facts = ("Across the full analyst team, the priorities ranked by evidence strength are: "
+                     + "; ".join(f"{b.label} ({b.owner}) — {b.finding}" for b in ordered[:3])
+                     + f". For broader context, {ctx}.")
+        else:
+            headline = "Executive briefing — no issue cleared the evidence threshold today."
+            facts = f"No domain produced a material signal. For context, {ctx}."
+    elif intent == "actions":
         headline = "Recommended next actions, routed to each owner."
         facts = (f"For context, {ctx}. Prioritized actions: "
                  + "; ".join(f"{r['owner']} — {r['action']}" for r in recos[:5]) + ".")
@@ -544,6 +603,12 @@ def n_synthesize(state: WState) -> dict:
         bullets = [f"Context: {ctx}."] + [
             f"{_tag.get(r['priority'], 'Investigate next')} — **{r['owner']}**: {r['action']} "
             f"(basis: {r['rationale']})" for r in recos]
+    elif intent == "briefing":
+        es_title = "Executive briefing"
+        bullets = ["The full analyst team ran in parallel; issues are ranked by evidence strength "
+                   "and routed to their owners below."] + [
+            f"{_tag.get(r['priority'], 'Investigate next')} — **{r['owner']}**: {r['action']} "
+            f"(basis: {r['rationale']})" for r in recos]
     else:  # overall
         es_title = "Executive summary"
         bullets = [f"Context: {ctx}."] + [
@@ -559,19 +624,32 @@ def n_synthesize(state: WState) -> dict:
             user_visible_note="Question-specific summary composed.")
     _step(state, "executive summary", f"Composed a {intent}-specific summary.")
 
+    # Ranked cross-domain issue list for the briefing view (every domain, not just
+    # the conversion beam), with priority + the grounded action for each.
+    briefing_issues = ([{"label": b.label, "owner": b.owner, "finding": b.finding,
+                         "confidence": b.confidence, "score": b.total, "signal": abs(b.signal),
+                         "priority": pri_map.get(id(b), "medium"),
+                         "action": grounded_action(b.driver)} for b in ordered]
+                       if intent == "briefing" else [])
+    recommendation = (
+        "These issues span several teams. Route each to its owner for a human-reviewed check, "
+        "starting with the two flagged Act now."
+        if intent == "briefing" else
+        "Evidence points to multiple compounding drivers rather than a single cause. Route each "
+        "likely driver to its owner for a human-reviewed check before any action.")
+
     answer = {
         "headline": headline, "summary": summary, "intent": intent, "focus": focus_block,
         "conversion_context": ctx[0].upper() + ctx[1:] + ".",
         "definition": catalog.get_metric("digital_conversion_rate")["definition"].strip(),
         "drivers": drivers,
+        "briefing_issues": briefing_issues,
         "contributors": [{"label": b.label, "confidence": "possible contributor (outside beam)",
                           "owner": b.owner, "finding": b.finding, "score": b.total} for b in deferred],
         "pruned": [{"label": b.label, "reason": b.finding, "score": b.total} for b in pruned],
         "corroborating": corr_out,
         "degraded": state.get("degraded", []),
-        "recommendation": ("Evidence points to multiple compounding drivers rather than a single "
-                           "cause. Route each likely driver to its owner for a human-reviewed check "
-                           "before any action."),
+        "recommendation": recommendation,
         "caveats": ["Synthetic data with a fixed seed; magnitudes are illustrative.",
                     "Read-only analysis - no operational systems were modified.",
                     "Causality is labeled (likely driver / possible contributor); not proven."],
@@ -624,7 +702,8 @@ def n_analytics(state: WState) -> dict:
               "degraded": [], "caveats": ["Synthetic data with a fixed seed; illustrative magnitudes.",
                                           "Read-only analysis over governed tables."],
               "exec_summary": None, "focus": None,
-              "recommendation": f"Route to {ins.owner} for review; no operational writes."}
+              "recommendation": f"{ins.owner}: {res['headline']} Review and prioritize "
+                                "accordingly (read-only analysis — no operational writes)."}
     a.event(workflow_node="synthesize", decision_type="final_answer_ready", tool_name="Synthesis",
             output_summary=res["headline"][:70], user_visible_note="Analytics answer assembled.")
     return {"answer": answer, "queries_used": 1}
