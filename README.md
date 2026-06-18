@@ -77,7 +77,7 @@ python tools.py doctor     # print environment / tool status
 
 ```bash
 pip install -r requirements.txt
-streamlit run app.py
+streamlit run app/main.py
 ```
 
 Generate the standalone interactive plan as HTML:
@@ -98,15 +98,16 @@ python -m evals.validation   # Plan section 14.4 checks
 | Page | Contents |
 |------|----------|
 | 🏠 Overview | Executive summary, business roles, enterprise/medallion alignment, capability alignment, status |
-| ✅ Feasibility Review | Verdict, free/local stack, **implementation issues found & handled**, readiness checklist, risks |
-| 🏗️ Architecture | LangGraph flow, live NetworkX graph, YAML files, agent roles, conflict rules |
-| 🗺️ Step-by-Step Plan | Capability roadmap, milestones with status, ToT model + rubric, tables, FR-01–FR-12 |
+| 🏗️ Architecture | LangGraph flow, live NetworkX graph, YAML catalog, agent roster, conflict rules |
+| 📚 Data Catalog | The 18 governed tables, certified metrics, drivers, and the live knowledge graph |
 | 🔬 Live Demo | Runs the real pipeline; live step trace + multi-agent team + four trace levels |
-| 📄 Interactive Plan | Full plan section-by-section + downloadable `project_plan.html` |
+| 🧪 Evaluation | Automated data, guardrail, and question-routing checks |
 
 The **Live Demo** streams each executing step, then exposes seven tabs: Business
 answer → Multi-agent team → Evidence → Trust details → ToT trace → Technical audit
-→ Action log.
+→ Action log. The question picker covers the flagship conversion investigation, three
+cross-functional **executive briefings** (multi-agent), 15 direct analytics questions,
+and 12 themed health / trend / risk reviews.
 
 ## Free / local tool stack (Plan section 5)
 
@@ -159,10 +160,10 @@ skills/                Governed capability wrappers (anatomy: <name>/SKILL.md)
   llm_skill.py         Ollama wrapper with deterministic fallback
   spec_loader.py       Loads agent specs + SKILL.md anatomy for the UI
 workflows/             LangGraph orchestration
-  graph.py             LangGraph StateGraph controller (nodes + routing)
+  graph.py             LangGraph StateGraph controller (nodes + routing; incl. briefing path)
   investigation.py     Orchestrator (public run_investigation entry point)
-  insights.py          11 standalone analytics questions
-  themes.py            11 themed health / trend / risk reviews
+  insights.py          15 standalone analytics questions
+  themes.py            12 themed health / trend / risk reviews
 data/                  Synthetic data
   generator.py         Faker fact_/dim_ generator + seeded scenarios + eval-only key
 evals/                 Evaluation harness
@@ -174,7 +175,15 @@ prompts/               Structured prompt templates
 scripts/               make_data / validate_catalog helpers
 tests/                 Unit + UI-contract tests (pytest)
 docs/                  Architecture notes + checkpoint documents
+presentation/          Capstone deck, talking points, demo script, code walkthrough
 ```
+
+## Presentation & code walkthrough
+
+The [`presentation/`](presentation/) folder contains the capstone materials: the slide
+deck, the 8-minute and 20-minute talking points, the click-by-click demo script, a
+[structured code walkthrough](presentation/CODE_WALKTHROUGH.md) that maps the code to
+the core concepts, and a Windows recording guide.
 
 ## Safety & governance
 
