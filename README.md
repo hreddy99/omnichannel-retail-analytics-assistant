@@ -175,15 +175,7 @@ prompts/               Structured prompt templates
 scripts/               make_data / validate_catalog helpers
 tests/                 Unit + UI-contract tests (pytest)
 docs/                  Architecture notes + checkpoint documents
-presentation/          Capstone deck, talking points, demo script, code walkthrough
 ```
-
-## Presentation & code walkthrough
-
-The [`presentation/`](presentation/) folder contains the capstone materials: the slide
-deck, the 8-minute and 20-minute talking points, the click-by-click demo script, a
-[structured code walkthrough](presentation/CODE_WALKTHROUGH.md) that maps the code to
-the core concepts, and a Windows recording guide.
 
 ## Safety & governance
 
