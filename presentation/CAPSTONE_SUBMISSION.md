@@ -42,7 +42,9 @@ The repo is already tidy. Before you share, confirm:
 ## 3) The 8-minute video — run sheet
 
 **Flow you asked for:** pitch → architecture & concepts → demo → code walkthrough → close.
-Deck: `Omnichannel_8min.pptx` (5 slides, notes on each).
+Deck: `Omnichannel_8min.pptx` (5 designed slides, speaker notes on each; slide 2 is a drawn
+architecture diagram). To tweak any wording, edit `presentation/build_deck_8min.py`
+(and `build_arch_diagram.py` for the diagram) and re-run them.
 
 | Time | Slide | Segment | Say (one beat) |
 |---|---|---|---|
