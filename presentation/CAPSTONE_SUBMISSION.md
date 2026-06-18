@@ -41,25 +41,49 @@ The repo is already tidy. Before you share, confirm:
 
 ## 3) The 8-minute video — run sheet
 
-**Shape:** ~4.5 min talk · ~3 min demo · ~0.5 min close. Deck: `Omnichannel_8min.pptx` (7 slides, notes on each).
+**Flow you asked for:** pitch → architecture & concepts → demo → code walkthrough → close.
+Deck: `Omnichannel_8min.pptx` (5 slides, notes on each).
 
-| Time | Slide | Say (one beat) |
-|---|---|---|
-| 0:00–0:25 | 1 Title | Open with the **9-second pitch**, then "here's the problem, how it works, and a live demo." |
-| 0:25–2:15 | 2 Problem→Solution | Fast **and** trustworthy. Pain: siloed (slow) + ungoverned AI (hallucinated definitions, asserted cause). Solution: answer = number **+ evidence + definition + confidence + caveat + owner action.** Free/local. |
-| 2:15–3:45 | 3 How it works | YAML catalog = source of truth. LangGraph loop: classify → retrieve (RAG) → validate → graph → **7 analysts in parallel** → Critic 0–14 → beam → human review. **LLM drafts prose only; never invents numbers.** |
-| 3:45–4:45 | 4 Trustworthy | Each control is **enforced in code**: read-only validator, certified-definitions-only, **causality labeled not asserted**, human-in-the-loop, full audit + version hash. |
-| 4:45–7:45 | 5 **DEMO** | (1) "Why did conversion drop?" — trace, drivers + chart, owner actions, review banner. (2) "Update the budget" → **refused**. (3) one **executive briefing**. |
-| 7:45–8:15 | 6 Evaluation | Seeded ground truth + 15 checks + 25 tests + 0 render exceptions; reproducible & free. |
-| 8:15–8:30 | 7 Close | "Fast and trustworthy." Lesson: *the hard part of agentic AI is governing, evaluating, observing — not generating.* Thank you. |
+| Time | Slide | Segment | Say (one beat) |
+|---|---|---|---|
+| 0:00–0:35 | 1 Title | **Pitch + agenda** | Say the **9-second pitch** verbatim, then the 4-part agenda in one line. |
+| 0:35–2:35 | 2 Architecture | **Architecture & concepts** | Walk the loop once, then point at the bracketed **concept tags** (governance/semantic layer, RAG, knowledge graph, multi-agent, ToT/beam, LLM grounding, responsible AI). Land: *facts come from governed SQL; the LLM only phrases them.* |
+| 2:35–5:00 | 3 Demo | **Live demo (app)** | (1) "Why did conversion drop?" — trace, drivers + chart, owner actions, review banner. (2) "Update the budget" → **refused**. (3) one **executive briefing**. |
+| 5:00–7:30 | 4 Code walkthrough | **Code (editor)** | Open 6 files, one sentence each (script below). Close on `ungoverned_branch()` being pruned automatically. |
+| 7:30–8:00 | 5 Close | **Close** | "Fast and trustworthy." Lesson + evaluation numbers as proof. Thank you. |
 
 **The three things that must land** (graders reward these):
 1. **A real business problem** — fast *and* trustworthy, not a tech demo.
 2. **Governance enforced in code** — read-only validator, certified definitions, audit trail. The differentiator vs. "chat with your data."
-3. **Intellectual honesty** — causality *labeled*, not claimed; recommend, don't act.
+3. **You understand the concepts** — the architecture slide *names* them, the code walkthrough *shows* them.
 
-**If you run long:** cut slide 6 to one sentence and merge it into slide 7; in the demo, do only #1 and #2.
-**Never** let the demo drop below ~2 minutes — it's the proof.
+**If you run long:** in the demo do only #1 and #2; in the code walkthrough do only the four starred files
+below. **Never** let the demo drop below ~2 minutes — it's the proof.
+
+---
+
+## Code walkthrough — fast script (~2.5 min, in your editor)
+
+Pre-open these as tabs in VS Code so you don't fumble. Open in order; one sentence each. ★ = keep if short on time.
+
+1. ★ **`catalog/metrics.yaml`** — "Everything resolves to this one rulebook of *certified* metric
+   definitions — the single source of truth. No definitions are invented anywhere else." *[governance / semantic layer]*
+2. ★ **`skills/sql_skill.py` → `check_sql()`** — "Before any query runs, this bouncer allows only
+   read-only SELECTs over approved tables — a write is blocked *before* it executes." *[guardrails / responsible AI]*
+3. **`skills/retrieval_skill.py` → `retrieve()`** — "This is the RAG step: a top-k vector lookup over the
+   catalog, and it rejects any chunk whose fingerprint is stale." *[RAG + embeddings]*
+4. ★ **`workflows/graph.py` → `build_workflow()` + `classify_intent()`** — "The LangGraph state machine: it
+   classifies the question, then runs the governed loop — and decides whether one analyst or the whole
+   team is needed." *(also point at `n_human_review` — every recommendation routes to an owner)* *[orchestration / human-in-the-loop]*
+5. **`agents/team.py` → `dispatch()`** — "Seven specialist analysts run in parallel, each with its own
+   query and timeout; a failing one is isolated, not fatal." *[multi-agent systems]*
+6. ★ **`skills/tot_skill.py` → `score_branch()` + `ungoverned_branch()`** — "Each explanation is scored on a
+   0–14 rubric; and this planted *ungoverned* 'maybe prices rose' hypothesis gets **pruned automatically**
+   because it has no certified metric. Governance isn't a prompt — it's enforced." *[Tree-of-Thoughts/beam + responsible AI]*
+
+**The closing line for this segment:**
+> "So the AI decides *what to look at* and *how to phrase it* — but every fact is governed, checked, and
+> logged." *(Full version: `presentation/CODE_WALKTHROUGH.md`.)*
 
 ---
 

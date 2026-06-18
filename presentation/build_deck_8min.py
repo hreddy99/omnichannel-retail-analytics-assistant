@@ -1,7 +1,7 @@
 """
-Builds the CONDENSED 8-minute capstone deck (7 slides) for the Omnichannel Retail
-Analytics Assistant. Run: python presentation/build_deck_8min.py
-Produces presentation/Omnichannel_8min.pptx
+Builds the 8-minute capstone deck in the requested flow:
+pitch -> architecture & concepts -> demo -> live code walkthrough -> close.
+Run: python presentation/build_deck_8min.py  ->  presentation/Omnichannel_8min.pptx
 """
 from pptx import Presentation
 from pptx.util import Inches, Pt
@@ -13,6 +13,7 @@ SLATE = RGBColor(0x1E, 0x29, 0x3B)
 GREY = RGBColor(0x47, 0x55, 0x69)
 LIGHT = RGBColor(0xF1, 0xF5, 0xF9)
 WHITE = RGBColor(0xFF, 0xFF, 0xFF)
+BLUE = RGBColor(0x25, 0x63, 0xEB)
 FONT = "Segoe UI"
 
 prs = Presentation()
@@ -54,14 +55,14 @@ def content(number, kicker, title, bullets, note, accent=CMU_RED):
     k = _box(s, Inches(0.6), Inches(0.42), Inches(12.1), Inches(0.4))
     _para(k.text_frame, kicker.upper(), 13, accent, bold=True, space_after=2, new=False)
     tt = _box(s, Inches(0.6), Inches(0.82), Inches(12.1), Inches(1.0))
-    _para(tt.text_frame, title, 30, SLATE, bold=True, space_after=0, new=False)
-    body = _box(s, Inches(0.7), Inches(1.95), Inches(11.9), Inches(4.9))
+    _para(tt.text_frame, title, 29, SLATE, bold=True, space_after=0, new=False)
+    body = _box(s, Inches(0.7), Inches(1.9), Inches(11.9), Inches(4.9))
     tf = body.text_frame
     for text, level, bold in bullets:
         color = SLATE if level == 0 else GREY
-        size = 19 if level == 0 else 16
+        size = 18 if level == 0 else 15
         _para(tf, ("•  " if level == 0 else "–  ") + text, size, color, bold=bold,
-              level=level, space_after=10 if level == 0 else 5)
+              level=level, space_after=9 if level == 0 else 4)
     f = _box(s, Inches(0.6), Inches(7.0), Inches(11.6), Inches(0.4))
     _para(f.text_frame, "Omnichannel Retail Analytics Assistant  ·  CMU Capstone  ·  8-min", 10, GREY, new=False)
     pg = _box(s, Inches(12.5), Inches(7.0), Inches(0.6), Inches(0.4))
@@ -70,109 +71,126 @@ def content(number, kicker, title, bullets, note, accent=CMU_RED):
     return s
 
 
-# ===== 1 — Title + 9-second pitch =====
+def section(number, kicker, title, lines, note):
+    """Dark 'holder' slide for the live segments (demo / code walkthrough)."""
+    s = prs.slides.add_slide(BLANK)
+    _fill(s, 0, Inches(2.55), SW, Inches(0.10), CMU_RED)
+    k = _box(s, Inches(0.9), Inches(1.7), Inches(11.5), Inches(0.5))
+    _para(k.text_frame, kicker.upper(), 17, CMU_RED, bold=True, new=False)
+    t = _box(s, Inches(0.9), Inches(2.75), Inches(11.5), Inches(1.0))
+    _para(t.text_frame, title, 32, WHITE, bold=True, new=False)
+    b = _box(s, Inches(0.9), Inches(3.95), Inches(11.5), Inches(2.6))
+    tf = b.text_frame
+    for ln in lines:
+        _para(tf, ln, 16, LIGHT, space_after=8, new=(ln is not lines[0]))
+    _fill_bg = None
+    notes(s, note)
+    # dark background behind everything
+    s.shapes._spTree.remove(s.shapes[-1]._element)  # noop guard
+    return s
+
+
+def section_dark(number, kicker, title, lines, note):
+    s = prs.slides.add_slide(BLANK)
+    _fill(s, 0, 0, SW, SH, SLATE)
+    _fill(s, 0, Inches(2.55), SW, Inches(0.10), CMU_RED)
+    k = _box(s, Inches(0.9), Inches(1.6), Inches(11.5), Inches(0.5))
+    _para(k.text_frame, kicker.upper(), 17, RGBColor(0xF8,0x71,0x71), bold=True, new=False)
+    t = _box(s, Inches(0.9), Inches(2.65), Inches(11.5), Inches(1.0))
+    _para(t.text_frame, title, 32, WHITE, bold=True, new=False)
+    b = _box(s, Inches(0.9), Inches(3.9), Inches(11.5), Inches(2.8))
+    tf = b.text_frame
+    for i, ln in enumerate(lines):
+        _para(tf, ln, 16, LIGHT, space_after=8, new=(i != 0))
+    pg = _box(s, Inches(12.5), Inches(7.0), Inches(0.6), Inches(0.4))
+    _para(pg.text_frame, str(number), 11, RGBColor(0x94,0xA3,0xB8), bold=True, new=False)
+    notes(s, note)
+    return s
+
+
+# ===== 1 — Title + pitch + agenda =====
 s = prs.slides.add_slide(BLANK)
 _fill(s, 0, 0, SW, SH, SLATE)
-_fill(s, 0, Inches(2.5), SW, Inches(0.10), CMU_RED)
-t = _box(s, Inches(0.9), Inches(1.25), Inches(11.5), Inches(1.2))
-_para(t.text_frame, "Omnichannel Retail Analytics Assistant", 42, WHITE, bold=True, new=False)
-p = _box(s, Inches(0.9), Inches(2.75), Inches(11.5), Inches(1.6))
+_fill(s, 0, Inches(2.35), SW, Inches(0.10), CMU_RED)
+t = _box(s, Inches(0.9), Inches(1.15), Inches(11.5), Inches(1.1))
+_para(t.text_frame, "Omnichannel Retail Analytics Assistant", 40, WHITE, bold=True, new=False)
+p = _box(s, Inches(0.9), Inches(2.6), Inches(11.5), Inches(1.5))
 _para(p.text_frame, "A governed AI analyst that tells retail leaders why a KPI moved —",
-      22, LIGHT, space_after=2, new=False)
+      21, LIGHT, space_after=2, new=False)
 _para(p.text_frame, "across every team, in seconds, using only certified data. It never guesses.",
-      22, LIGHT)
-m = _box(s, Inches(0.9), Inches(5.7), Inches(11.5), Inches(1.2))
+      21, LIGHT)
+ag = _box(s, Inches(0.9), Inches(4.5), Inches(11.5), Inches(1.5))
+_para(ag.text_frame, "Today (8 min):  1) the pitch   2) architecture & concepts   "
+                     "3) live demo   4) a quick code walkthrough", 16, WHITE, bold=True, new=False)
+m = _box(s, Inches(0.9), Inches(6.5), Inches(11.5), Inches(0.6))
 _para(m.text_frame, "Final Capstone  ·  Carnegie Mellon University  ·  Sreddy  ·  June 2026",
-      15, WHITE, bold=True, new=False)
-notes(s, "0:00–0:25. Lead with the 9-second pitch verbatim, then: 'In the next 8 minutes I'll show "
-        "the problem, how it works, and a live demo.' Keep energy high; the demo is the star.")
+      13, RGBColor(0x94,0xA3,0xB8), new=False)
+notes(s, "0:00–0:35. Say the 9-second pitch verbatim, then read the 4-part agenda in one line so they "
+        "know the shape: pitch, architecture + concepts, demo, code walkthrough. Move fast.")
 
-# ===== 2 — Problem + solution =====
+# ===== 2 — Architecture & concepts =====
 content(
-    2, "Problem → solution", "Fast answers and trustworthy answers — usually you pick one",
-    [("When a KPI moves, the 'why' spans many teams — marketing, merchandising, fulfillment, "
-      "service, finance. Today that's a multi-day, multi-team fire drill.", 0, False),
-     ("Generic 'chat-with-your-data' AI is fast but ungoverned: it invents metric definitions, "
-      "runs arbitrary queries, and asserts causation. A confident wrong answer is a liability.", 0, False),
-     ("My solution: a governed multi-agent analyst. Ask in plain English → it retrieves CERTIFIED "
-      "definitions, runs read-only queries, reasons across domains, and returns:", 0, True),
-     ("answer + evidence + the definition used + confidence + caveats + an owner-routed action.", 1, False),
-     ("100% free and local — synthetic data, local models, nothing leaves the laptop.", 0, False)],
-    "0:25–2:15. Frame the tension: fast AND trustworthy. Hit the two pains (speed + ungoverned AI) "
-    "and land 'a confident wrong answer is a liability.' Then the one-line solution and the key idea: "
-    "the answer is never just a number — it's a governed package with an owner action.")
+    2, "Part 2 · Architecture & the concepts I used",
+    "Governed knowledge + a multi-agent reasoning loop",
+    [("Source of truth — a versioned, hashed YAML catalog of certified metrics, approved tables, "
+      "drivers, and guardrails.   [data governance / semantic layer]", 0, False),
+     ("The loop (LangGraph state machine):   classify → retrieve → validate → relate → baseline → "
+      "dispatch team → critic + beam → human review → answer.   [agent orchestration / ReAct]", 0, False),
+     ("retrieve = RAG over a ChromaDB vector index;  relate = a NetworkX knowledge graph "
+      "(metric → driver → table → owner).   [RAG + embeddings · knowledge graph]", 0, False),
+     ("dispatch = 7 specialized analysts run in parallel;  the Critic scores each on a 0–14 rubric "
+      "and beam search keeps the strongest.   [multi-agent systems · Tree-of-Thoughts + beam]", 0, False),
+     ("The LLM only DRAFTS the prose — every number comes from governed SQL.   [LLM grounding]", 0, True),
+     ("Read-only · causality labeled (not asserted) · human-in-the-loop · full audit trail.   "
+      "[responsible AI / governance]", 0, False)],
+    "0:35–2:35 (~2 min). This is the 'architecture + concepts' segment. Walk the loop left-to-right "
+    "ONCE, then point at the bracketed concept tags — that's you naming the program vocabulary out "
+    "loud: governance/semantic layer, RAG, knowledge graph, multi-agent, Tree-of-Thoughts/beam, LLM "
+    "grounding, responsible AI. The ONE principle to land: facts come from governed SQL over certified "
+    "metrics; the LLM only phrases them. You'll prove each of these in the code walkthrough next.")
 
-# ===== 3 — How it works =====
+# ===== 3 — DEMO =====
+section_dark(
+    3, "Part 3 · Live demo (~2.5 min)", "Seeing it run on a seeded 'bad day'",
+    ["1.  'Why did conversion drop yesterday?' → team dispatch + live trace → drivers & evidence "
+     "chart → owner actions + the human-review banner.",
+     "2.  'Update the paid-social budget' → the read-only guardrail refuses.",
+     "3.  An executive briefing → the multi-agent path ranks the biggest cross-functional issues."],
+    "2:35–5:00 (~2.5 min). App already running and WARMED UP. (1) Run the conversion investigation; "
+    "narrate the governed steps as the trace streams; land on Business answer → Evidence chart → owner "
+    "actions + 🔴 human-review banner. (2) Type a write request → it refuses (fast, always lands). "
+    "(3) Run one briefing. If time is tight, do #1 and #2 only. Keep a backup screenshot.")
+
+# ===== 4 — Code walkthrough map =====
 content(
-    3, "How it works", "Governed knowledge + a multi-agent reasoning loop",
-    [("Source of truth: a versioned YAML catalog of certified metrics, approved tables, drivers, "
-      "and guardrails — queried read-only over 18 tables in DuckDB.", 0, False),
-     ("A LangGraph workflow runs the loop: classify → retrieve (RAG/ChromaDB) → validate (YAML) → "
-      "relate (NetworkX graph) → dispatch a 7-analyst team in parallel → Critic scores each on a "
-      "0–14 rubric → beam search keeps the strongest → human review → answer.", 0, False),
-     ("The LLM is on a short leash — it only DRAFTS the prose; every number comes from governed SQL. "
-      "No model running? A deterministic fallback writes it, so the demo can't break.", 0, True)],
-    "2:15–3:45. One architecture slide. Read the loop quickly, then stress the design principle: the "
-    "LLM never invents facts — it only phrases proven ones. Name the concepts as you go (RAG, knowledge "
-    "graph, multi-agent, beam search) so the committee hears the program vocabulary. Mention the "
-    "free/local fallback so they know the demo is robust.")
+    4, "Part 4 · Quick code walkthrough", "Six files — each is one concept, end to end",
+    [("catalog/metrics.yaml — the certified definitions everything resolves to.   [governance / source of truth]", 0, False),
+     ("skills/sql_skill.py · check_sql() — only read-only SELECTs over approved tables run.   [guardrails]", 0, False),
+     ("skills/retrieval_skill.py · retrieve() — top-k vector lookup + a staleness/sync gate.   [RAG]", 0, False),
+     ("workflows/graph.py · build_workflow() + classify_intent() — the LangGraph loop & routing.   [orchestration]", 0, False),
+     ("agents/team.py · dispatch() — 7 analysts in parallel; a failure is isolated.   [multi-agent]", 0, False),
+     ("skills/tot_skill.py · score_branch() + ungoverned_branch() — the 0–14 rubric prunes the "
+      "ungoverned 'maybe prices rose' idea automatically.   [ToT/beam + responsible AI]", 0, False)],
+    "5:00–7:30 (~2.5 min). Switch to your editor (VS Code). Open these SIX files in THIS order and say "
+    "ONE sentence each (see the 'Code walkthrough — fast script' in CAPSTONE_SUBMISSION.md). Goal: show "
+    "you understand the concepts, not read code line-by-line. The closer: in tot_skill.py point at "
+    "ungoverned_branch() being pruned automatically — 'governance isn't a prompt, it's enforced.' "
+    "If short on time, do metrics.yaml → sql_skill → graph.py → tot_skill (the 4 that best show "
+    "understanding). Keep the files pre-opened as tabs so you don't fumble.")
 
-# ===== 4 — Trust / responsible AI =====
+# ===== 5 — Close =====
 content(
-    4, "Why it's trustworthy", "Governance enforced in code — the differentiator",
-    [("Read-only guardrail: a SQL validator allows only SELECT over APPROVED tables; any write is "
-      "blocked before it runs. (I'll show it refuse a write.)", 0, False),
-     ("Certified definitions only — metrics resolve from the versioned, hashed catalog, never invented.", 0, False),
-     ("Causality is LABELED, not asserted — 'likely driver' / 'possible contributor', never 'caused'.", 0, True),
-     ("Human-in-the-loop — every recommendation routes to an owner; no system is changed automatically.", 0, False),
-     ("Full audit trail + version/hash on every answer — reproducible and inspectable.", 0, False)],
-    "3:45–4:45. This is what makes it a capstone, not a toy. Each line is an ENFORCED control, not a "
-    "prompt. Emphasize causal humility (observational data → label likelihood) and human-in-the-loop + "
-    "read-only = safe to deploy in a governed enterprise. Tease the guardrail demo.")
-
-# ===== 5 — DEMO =====
-s = prs.slides.add_slide(BLANK)
-_fill(s, 0, 0, SW, SH, SLATE)
-_fill(s, 0, Inches(2.7), SW, Inches(0.10), CMU_RED)
-k = _box(s, Inches(0.9), Inches(2.0), Inches(11.5), Inches(0.5))
-_para(k.text_frame, "LIVE DEMO  ·  ~3 minutes", 18, CMU_RED, bold=True, new=False)
-t = _box(s, Inches(0.9), Inches(2.9), Inches(11.5), Inches(1.0))
-_para(t.text_frame, "On a seeded 'bad day'", 34, WHITE, bold=True, new=False)
-b = _box(s, Inches(0.9), Inches(4.1), Inches(11.5), Inches(2.2))
-tf = b.text_frame
-_para(tf, "1.  'Why did conversion drop yesterday?' — team dispatch, live trace, drivers + "
-          "evidence chart, owner actions, human-review banner.", 17, LIGHT, space_after=9, new=False)
-_para(tf, "2.  'Update the paid-social budget' — the read-only guardrail refuses.", 17, LIGHT, space_after=9)
-_para(tf, "3.  An executive briefing — the multi-agent path ranks the biggest cross-functional issues.", 17, LIGHT)
-notes(s, "4:45–7:45 (your centerpiece — keep it tight). App already running & warmed up. (1) Run the "
-        "conversion investigation; narrate the governed steps while the trace streams; land on Business "
-        "answer → Evidence chart → owner actions + human-review banner. (2) Show the write refusal — "
-        "fast, always lands. (3) Run ONE briefing to show cross-functional ranking. Have a backup "
-        "screenshot. If short on time, do #1 and #2 only.")
-
-# ===== 6 — Evaluation & feasibility =====
-content(
-    6, "Does it work?", "Reproducible, validated, and free to run",
-    [("Seeded ground truth: a fixed-seed world with a known story (conversion down ~23% from a "
-      "paid-social shift, stockouts, and regional delays) — so I can verify it finds the right drivers.", 0, False),
-     ("Automated checks: 15 data/guardrail/routing validations pass; 25 tests pass; the UI renders "
-      "all pages with 0 exceptions.", 0, False),
-     ("Reproducible by design — same seed, same evidence — and 100% free/local, no paid APIs.", 0, True)],
-    "7:45–8:15 (overrun budget). Two evaluation layers: known ground truth + automated gates "
-    "(data, guardrails, routing). Reproducibility from a fixed seed is itself a governance property. "
-    "Keep this to ~20 seconds if the demo ran long.")
-
-# ===== 7 — Impact / close =====
-content(
-    7, "Why it matters", "From a 2-day fire drill to a governed answer in seconds",
-    [("Impact: fast AND trustworthy — the tension we started with, resolved.", 0, False),
+    5, "Close", "From a 2-day fire drill to a governed answer in seconds",
+    [("Fast AND trustworthy — the tension I opened with, resolved.", 0, False),
      ("The lesson: the hard part of agentic AI isn't generating answers — it's governing, "
       "evaluating, and observing them.", 0, True),
-     ("Extends to production: swap synthetic data for real warehouse tables behind the same catalog; "
-      "the governance and reasoning are unchanged.", 0, False),
-     ("Thank you — happy to take questions.", 0, False)],
-    "8:15–8:30. Close on the opening promise (fast AND trustworthy) and the one-sentence lesson. "
-    "Give the production path in one line to show it scales. Thank them and open Q&A.")
+     ("Proven & reproducible: seeded ground truth, 15 validation checks, 25 tests, 0 UI exceptions — "
+      "and 100% free/local.", 0, False),
+     ("Extends to production: swap synthetic data for real tables behind the same catalog. "
+      "Thank you — questions?", 0, False)],
+    "7:30–8:00. Tie back to the opening promise (fast AND trustworthy) and deliver the one-sentence "
+    "lesson. Drop the evaluation numbers as proof in one breath. One line on the production path, then "
+    "thank them and open Q&A.")
 
 import os
 out = os.path.join(os.path.dirname(__file__), "Omnichannel_8min.pptx")
