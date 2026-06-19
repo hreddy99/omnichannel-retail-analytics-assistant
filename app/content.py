@@ -5,7 +5,6 @@ the Streamlit app and the standalone interactive HTML so both stay in sync from
 a single source.
 """
 
-TITLE = "Omnichannel Retail Analytics Assistant"
 SUBTITLE = "Governed agentic analytics for the modern data platform"
 TAGLINE = "ReAct + RAG + Knowledge Graph + Conditional Tree-of-Thought Beam Search"
 
@@ -124,37 +123,6 @@ CAPABILITY_ALIGNMENT = [
      "No writes; weak findings labeled possible, hypothesis, or inconclusive."),
 ]
 
-# Capability roadmap (stage, objective, scope, success)
-PHASE_ROADMAP = [
-    ("Core (current release)", "Deliver the digital conversion investigation assistant.",
-     "Conversion, campaign/channel mix, inventory, fulfillment; synthetic data; YAML; ChromaDB; NetworkX; DuckDB; LangGraph; conditional ToT.",
-     "End-to-end local demo answers the drop with evidence, caveats, confidence, owner actions."),
-    ("Operations & service", "Expand into retail operations and service intelligence.",
-     "Service contacts, fulfillment-service linkage, category drilldowns, checkout funnel, regional analysis.",
-     "Connects service, fulfillment, category, funnel evidence without overstating causality."),
-    ("Finance & vendor", "Expand into finance, vendor insights, and executive summaries.",
-     "Finance reconciliation, gross-to-net, vendor/category, returns/margin proxy, executive summaries.",
-     "Produces finance-safe, executive-friendly summaries from evidence-backed findings."),
-    ("Future production", "Move to governed enterprise deployment after the pattern is proven.",
-     "BI semantic layers, RBAC, audit logging, lineage, human-in-the-loop, optional Neo4j.",
-     "Architecture remains governed, auditable, and human-reviewed."),
-]
-
-# (tool, role, free?, mvp notes)
-TOOL_STACK = [
-    ("Python", "Runtime, data generator, tool wrappers, validation utilities.", "Yes", "Local virtual environment."),
-    ("Streamlit", "UI: question, answer, evidence, trust details, debug trace, action log.", "Yes", "Runs locally in browser."),
-    ("LangGraph", "Central controller: state, routing, tool calls, budget, stopping.", "Yes", "Deterministic nodes for each step."),
-    ("Ollama", "Local LLM for planning, summarization, response drafting.", "Optional", "Lightweight model; optional with fallback."),
-    ("YAML", "Governed source of truth: metrics, tables, rules, caveats, guardrails.", "Yes", "Inspectable, versionable, hashable."),
-    ("ChromaDB", "Local vector DB for semantic retrieval over YAML chunks.", "Yes", "Persistent dir; refresh on YAML change."),
-    ("sentence-transformers", "Local embedding model for vector search.", "Yes", "all-MiniLM-L6-v2."),
-    ("NetworkX", "Local knowledge graph for metric-table-driver-owner.", "Yes", "Python library; no server."),
-    ("DuckDB", "Local read-only analytics engine over synthetic tables.", "Yes", "File-based; fast for demo data."),
-    ("Python guardrails", "SQL safety, freshness, conflict, evidence, scoring, stopping.", "Yes", "Deterministic, testable functions."),
-    ("CrewAI", "Potential future role-based agent framework.", "Optional", "Future option only; not required."),
-    ("MCP", "Potential future shared context/state protocol.", "Optional", "Not needed for local MVP."),
-]
 
 # Architecture layers (layer, component, responsibility, control)
 ARCH_LAYERS = [
@@ -241,37 +209,6 @@ MULTI_AGENT_TRADEOFFS = [
     ("Observability gap", "A coordination log records which agents ran, durations, parallel speedup, and failures; every agent call is an audit event."),
 ]
 
-# ToT depth model (element, definition)
-TOT_DEPTH = [
-    ("Thought", "A candidate driver hypothesis plus an evidence plan."),
-    ("Node", "Reasoning state: metric, source versions, candidate driver, expected evidence, SQL template, score, caveats."),
-    ("Branch", "Path from root question to a candidate driver and sub-driver investigation."),
-    ("Depth 0", "Validated root question: metric, time window, source versions, query budget."),
-    ("Depth 1", "Primary driver branches: campaign mix, inventory, fulfillment, funnel, service, finance, vendor."),
-    ("Depth 2", "Sub-driver refinement: paid social quality, category stockout, delivery delay, etc."),
-    ("Branching factor", "Usually 3-4 primary branches."),
-    ("Depth limit", "Depth 2 for the MVP to avoid branch explosion on a laptop."),
-]
-
-# ToT scoring rubric (criterion, max)
-TOT_RUBRIC = [
-    ("Metric definition validated against YAML", 2),
-    ("Approved graph path exists", 2),
-    ("SQL safety and template validity", 2),
-    ("DuckDB evidence strength", 3),
-    ("Freshness and row quality", 2),
-    ("Business relevance / actionability", 2),
-    ("Caveats manageable", 1),
-]
-TOT_THRESHOLDS = (
-    "Below 7: prune branch or label inconclusive. 7-9: possible contributor (secondary "
-    "finding with caveat). 10+: likely driver if evidence is consistent and source checks "
-    "pass. Ties: prefer stronger DuckDB evidence, fewer caveats, fresher data, clearer "
-    "owner action. Beam width 2. Query budget: 1 baseline + up to 3 driver-path + 1 follow-up. "
-    "Defense-in-depth: DuckDB evidence strength only counts when the structural checks "
-    "(metric + graph + SQL safety) clear a minimum bar, so strong evidence cannot override "
-    "governance checks that signal problems."
-)
 
 # Source-conflict rules (situation, decision, behavior)
 CONFLICT_RULES = [
@@ -284,38 +221,6 @@ CONFLICT_RULES = [
     ("Prior note suggests a repeated pattern", "Treat as context only, not evidence.", "Current DuckDB must confirm before it is a finding."),
 ]
 
-# Synthetic tables (table, grain, role)
-SYNTH_TABLES = [
-    ("fact_sessions", "session", "Traffic, channel, device, campaign, region; conversion denominator."),
-    ("fact_events", "event", "Product views, cart adds, checkout starts, purchases (funnel)."),
-    ("fact_orders", "order", "Completed eligible orders, status, fulfillment type; conversion numerator."),
-    ("fact_order_items", "order item", "Product/category sales and item-level drilldowns."),
-    ("fact_inventory_daily", "product-location-day", "Stockout flag, available-online flag, inventory pressure."),
-    ("fact_fulfillment", "order-fulfillment", "Promise/actual date, delay days, cancellations, fulfillment type."),
-    ("fact_customer_contacts", "contact", "Contact reason, channel, region, order link, resolution, wait time."),
-    ("fact_finance_daily", "date/channel/category", "Gross sales, net revenue, returns, tax, shipping, margin proxy."),
-    ("fact_returns", "return line", "Returned orders by product/category with reason and amount."),
-    ("fact_campaign_daily", "campaign-day", "Spend, impressions, clicks, sessions, orders, conversion by campaign."),
-    ("fact_margin_proxy_daily", "category-day", "Net sales, discount, returns, and a margin proxy by category."),
-    ("fact_vendor_scorecard", "vendor-category-day", "Stockout impact, lost-sales proxy, return rate, service issues."),
-    ("dim_product", "product", "SKU, category, brand, price band, vendor_id, partner flag."),
-    ("dim_category", "category", "Department, category hierarchy, owner."),
-    ("dim_campaign", "campaign", "Campaign name, channel, date range, spend, audience, owner."),
-    ("dim_vendor", "vendor", "Vendor name, CPG partner flag, category owner, contact group."),
-    ("dim_contact_reason", "reason code", "Reason group, related driver, escalation flag."),
-    ("dim_region", "region", "Zone, carrier group, fulfillment owner."),
-]
-
-# Seeded scenarios (scenario, pattern, expected evidence, owner)
-SCENARIOS = [
-    ("Digital conversion drop", "Yesterday conversion declines 15-25% vs prior 7-day average.", "Overall delta and contribution ranking show the drop.", "Analytics / Leadership"),
-    ("Paid social traffic shift", "Paid social sessions spike but convert below baseline.", "Channel tables show higher traffic share, lower conversion.", "Marketing"),
-    ("Inventory availability issue", "Selected categories: high product views, low available-online / high stockout.", "High traffic, low conversion, elevated stockout rate.", "Merchandising"),
-    ("Fulfillment constraint", "Delivery delays or fewer options in selected regions.", "Higher delay_days, cancellations, lower option availability.", "Fulfillment Operations"),
-    ("Funnel behavior issue", "View-to-cart or checkout-to-purchase drops for a category/device.", "Funnel tables show abandonment change by stage.", "Digital Analytics"),
-    ("Service signal", "Contacts rise after fulfillment/inventory issue.", "Contact reasons correlate to affected orders/regions.", "Customer Service"),
-    ("Finance caveat", "Net revenue differs from gross due to returns/tax/shipping.", "Finance daily table explains gross-to-net differences.", "Finance"),
-]
 
 DEMO_QUESTIONS = [
     # Flagship cross-domain investigation
@@ -343,104 +248,6 @@ BRIEFING_QUESTIONS = [
     "Brief leadership on where to focus across marketing, merchandising, fulfillment, and service.",
 ]
 
-# Functional requirements (id, requirement, priority, acceptance)
-FUNC_REQS = [
-    ("FR-01", "User can enter a performance question in Streamlit.", "Must", "Captured in session state and shown in debug trace."),
-    ("FR-02", "Assistant detects ambiguous metric definitions.", "Must", "Clarifies or uses documented MVP default with caveat."),
-    ("FR-03", "Assistant runs catalog sync/version checks.", "Must", "Stale ChromaDB chunks or graph versions refreshed/blocked."),
-    ("FR-04", "Assistant retrieves top-k context from ChromaDB.", "Must", "Selected chunks appear in trust details with metadata."),
-    ("FR-05", "Assistant validates retrieval against YAML.", "Must", "Unsupported definitions, tables, joins, filters rejected."),
-    ("FR-06", "Assistant builds and traverses NetworkX graph.", "Must", "Returns campaign, inventory, fulfillment, owner paths."),
-    ("FR-07", "Assistant activates ToT only for competing drivers.", "Must", "Trace shows ToT trigger decision and branch candidates."),
-    ("FR-08", "Assistant validates SQL before execution.", "Must", "Only approved SELECT queries run."),
-    ("FR-09", "Assistant executes DuckDB analysis over synthetic data.", "Must", "Evidence shows current, baseline, delta, % change, confidence."),
-    ("FR-10", "Assistant applies evidence gate and stopping condition.", "Must", "Stops, retries once, or answers cautiously per rules."),
-    ("FR-11", "Assistant creates evidence-backed final response.", "Must", "Includes definition, evidence, caveats, confidence, owners."),
-    ("FR-12", "Assistant never writes to operational systems.", "Must", "Write requests refused and converted to recommendations."),
-]
-
-NON_FUNCTIONAL = [
-    ("Local feasibility", "All MVP components run locally on a PC using free tools and synthetic data."),
-    ("Transparency", "UI shows definition, chunks, graph path, SQL, evidence, branch scores, caveats."),
-    ("Performance", "Query budget and beam width keep demo latency reasonable on local hardware."),
-    ("Safety", "No PII, no proprietary data, no writes, no unsupported causality claims."),
-    ("Repeatability", "Data generation and Chroma/graph rebuilds are repeatable with a fixed seed."),
-    ("Maintainability", "YAML catalog is human-readable and small enough to inspect manually."),
-]
-
-# UI sections (section, content) - Plan section 17
-UI_SECTIONS = [
-    ("Business answer", "Plain-language result, ranked likely drivers, possible contributors, confidence."),
-    ("Evidence", "Tables by channel/campaign, category/inventory, fulfillment, funnel; current/baseline/delta/% change/freshness."),
-    ("Trust details", "Selected YAML definition, retrieved chunks, graph path, freshness, source versions, caveats, confidence."),
-    ("ToT trace", "Candidate branches, scores, pruned branches, surviving branches, selection rationale."),
-    ("SQL/Debug trace", "LangGraph nodes, tool outputs, SQL templates, query budget, validation results."),
-    ("Action log", "Owner, issue, evidence, confidence, priority, recommended next step (human-reviewed only)."),
-]
-
-# Four trace levels (level, audience, content)
-TRACE_LEVELS = [
-    ("Level 1: Business summary", "Business users and leaders", "Final explanation, ranked drivers, confidence, caveats, owner actions."),
-    ("Level 2: Evidence summary", "Analysts and managers", "Evidence tables, current vs baseline, contribution, freshness notes."),
-    ("Level 3: Trust details", "Analysts, reviewers, stakeholder demo", "YAML definition, chunk titles, graph path, sync status, why ToT (not) triggered."),
-    ("Level 4: Technical audit", "Developer / evaluator", "LangGraph node trace, tool-call summaries, SQL validation, branch scores, pruning, budget."),
-]
-
-# Audit event schema (field, example, purpose)
-AUDIT_SCHEMA = [
-    ("run_id", "2026-06-07-001", "Groups all events for one investigation."),
-    ("event_id", "evt_006", "Stable ordering and traceability."),
-    ("timestamp", "2026-06-07 14:32:11", "When each decision or tool call happened."),
-    ("workflow_node", "retrieve_context, source_gate, tot_score", "Maps event to the LangGraph node."),
-    ("decision_type", "metric_selected, branch_pruned, query_blocked", "The decision made."),
-    ("tool_name", "ChromaDB, YAML parser, NetworkX, DuckDB", "Which tool was used."),
-    ("input_summary", "metric=digital_conversion; baseline=prior_7_days", "Safe parameter summary."),
-    ("output_summary", "Retrieved 5 chunks; selected certified definition", "Result of the step."),
-    ("source_version_hash", "metrics.yaml v4 / hash match", "Chroma/graph synchronized with YAML."),
-    ("score_or_confidence", "Branch score=10/14; confidence=medium", "Supports pruning/evidence gate."),
-    ("status", "success, blocked, retried, caveated", "Whether the step passed or needed caution."),
-    ("user_visible_note", "Inventory path checked; evidence weak -> inconclusive.", "Plain-language UI trace."),
-]
-
-# Implementation milestones (milestone, deliverables, exit)
-MILESTONES = [
-    ("1. Project setup", "Repository, environment, Streamlit shell, local model notes.", "App starts locally and accepts a question."),
-    ("2. Synthetic data", "DuckDB schema, generator, seeded anomalies, validation SQL.", "Expected demo signals appear in data."),
-    ("3. YAML catalog", "metrics, tables, drivers, rules, guardrails, examples, version manifest.", "Catalog parses, validates, produces content hashes."),
-    ("4. Vector DB", "Chunk catalog/docs, embed, load ChromaDB, metadata checks.", "Search retrieves correct metric; stale chunks detected."),
-    ("5. Knowledge graph", "NetworkX graph generated from YAML.", "Graph returns valid drivers, tables, owners, version metadata."),
-    ("6. LangGraph workflow", "Classify, retrieve, validate, graph, ToT, SQL, evidence, synthesize nodes.", "Debug trace shows controlled reasoning loop."),
-    ("7. ToT beam search", "Branch generator, scoring, pruning, tie-breaker, stopping rule.", "Demo shows candidate branches and selection."),
-    ("8. Guardrails & evidence gate", "SQL validator, source gate, conflict checks, stopping, labels.", "Unsafe/unsupported answers blocked or caveated."),
-    ("9. Demo polish", "Streamlit tabs, response template, action log, screenshots, assets.", "MVP is presentation-ready and repeatable."),
-    ("10. Operations/finance backlog", "Service, funnel, finance, vendor, executive-summary placeholders.", "Future capabilities have a clear extension path."),
-]
-
-# Risks (risk, mitigation)
-RISKS = [
-    ("Scope becomes too broad.", "Keep MVP focused on conversion + campaign, inventory, fulfillment; defer service/finance depth."),
-    ("Local model produces weak SQL.", "Approved templates, structured prompts, parameter filling, validation, fallbacks."),
-    ("Vector retrieval returns stale/wrong definition.", "Validate vs YAML; metadata filters; reject version/hash mismatch."),
-    ("NetworkX relationship incorrect or stale.", "Generate from YAML; test expected paths; block on version mismatch."),
-    ("ToT branch explosion or latency.", "Trigger rule, beam width 2, depth limit 2, query budget, deterministic pruning."),
-    ("Weak evaluation prunes the best branch.", "Combined rubric: source, graph, SQL, DuckDB evidence, freshness, actionability."),
-    ("Synthetic data feels artificial.", "Seed realistic baselines, noise, multiple drivers; keep outcomes evaluation-only."),
-    ("Prior memory biases the answer.", "Prior notes are context only; current DuckDB must confirm."),
-    ("Answer overstates causality.", "Guarded language: likely driver, possible contributor, hypothesis, inconclusive."),
-    ("Implementation looks more complex than MVP.", "CrewAI, MCP, Neo4j, cloud are future options, not MVP requirements."),
-]
-
-# Implementation-readiness checklist (question, answer)
-READINESS = [
-    ("Is every required component free for the MVP?", "Yes. Python, Streamlit, LangGraph, DuckDB, YAML, ChromaDB, sentence-transformers, NetworkX, Ollama, guardrails run locally."),
-    ("Is Neo4j required?", "No. NetworkX suffices for the MVP. Neo4j is a future production option."),
-    ("Is CrewAI required?", "No. Role separation uses LangGraph nodes and functions. CrewAI is optional."),
-    ("Is MCP required?", "No. LangGraph state and local files are enough. MCP is a future option."),
-    ("Does ToT require expensive compute?", "No. Bounded by trigger rules, beam width 2, depth limit 2, templates, query budget."),
-    ("Can the synthetic data prove the demo?", "Yes. Seeded scenarios and validation SQL give repeatable patterns; outcomes are evaluation-only."),
-    ("Can it answer safely without production access?", "Yes. Analyzes synthetic DuckDB data; human-reviewed recommendations only."),
-    ("What prevents surprises?", "Version/hash sync, approved templates, deterministic validators, bounded budget, guarded language."),
-]
 
 # This prototype's status vs the plan (component, status, note)
 PROTOTYPE_STATUS = [

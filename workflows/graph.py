@@ -17,7 +17,7 @@ from langgraph.graph import END, START, StateGraph
 
 from agents import team as agents
 from skills import catalog_skill as catalog, graph_skill as graph, sql_skill as guardrails
-from skills import llm_skill as llm, tot_skill as tot
+from skills import input_skill as inputs, llm_skill as llm, tot_skill as tot
 from skills.audit_skill import AuditLog
 from workflows import insights, themes
 
@@ -53,6 +53,7 @@ class WState(TypedDict, total=False):
     refusal: str | None
     review: dict | None
     sync: dict
+    gate_message: str
 
 
 def _step(state: WState, node: str, detail: str, ok: bool = True):
@@ -114,6 +115,8 @@ _INTENT_LABEL = {
     "driver": "specific driver",
     "briefing": "cross-functional executive briefing",
     "overall": "overall conversion drop",
+    "refused": "refused — sensitive input outside synthetic scope",
+    "clarify": "clarification needed (ambiguous question)",
 }
 # Cross-business questions that should fan out the whole analyst team and return a
 # ranked, owner-routed executive briefing (NOT the single conversion-drop narrative).
@@ -162,6 +165,18 @@ def classify_intent(question: str):
 def n_classify(state: WState) -> dict:
     a: AuditLog = state["audit"]
     refusal = guardrails.refuse_write(state["question"])
+    # Input/scope guardrail (Checkpoint 6): refuse real PII / sensitive data before
+    # any retrieval or analysis, and route it for governance review.
+    sensitive = inputs.detect_sensitive(state["question"])
+    if sensitive:
+        a.event(workflow_node="input_gate", decision_type="sensitive_input_refused",
+                tool_name="Guardrails", input_summary="[redacted]",
+                output_summary="sensitive/PII pattern detected", status="blocked",
+                user_visible_note="Refused: real personal/sensitive data is out of scope.")
+        _step(state, "input gate", "Refused — the request contains real personal/sensitive "
+              "data; this prototype uses synthetic data only.", ok=False)
+        return {"refusal": refusal, "queries_used": 0, "intent": "refused",
+                "gate_message": sensitive}
     # Standalone analytics question (not the conversion-drop investigation)?
     insight_id = insights.match(state["question"])
     if insight_id:
@@ -184,6 +199,21 @@ def n_classify(state: WState) -> dict:
               "a multi-signal investigation, not the conversion-drop path.")
         return {"refusal": refusal, "queries_used": 0, "intent": "themed", "focus": theme_id}
     intent, focus = classify_intent(state["question"])
+    # Ambiguity check (Checkpoint 6): an anchorless question would otherwise default to
+    # the conversion narrative; instead ask one clarifying question first. A detected
+    # write request has a clear operational intent, so it flows through to the read-only
+    # refusal + human review rather than being treated as ambiguous.
+    if intent == "overall" and not refusal:
+        clarify = inputs.needs_clarification(state["question"])
+        if clarify:
+            a.event(workflow_node="input_gate", decision_type="clarification_requested",
+                    tool_name="LangGraph", input_summary=state["question"][:80],
+                    output_summary="ambiguous question — no governed anchor term",
+                    status="caveated", user_visible_note="Asked the user to clarify the metric/area.")
+            _step(state, "input gate", "Question is ambiguous — asking for one clarification "
+                  "before investigating (deferring to the user rather than guessing).")
+            return {"refusal": refusal, "queries_used": 0, "intent": "clarify",
+                    "gate_message": clarify}
     focus_label = (catalog.get_driver(focus) or {}).get("label", focus) if focus else ""
     detail = _INTENT_LABEL.get(intent, intent) + (f" → {focus_label}" if focus else "")
     a.event(workflow_node="classify", decision_type="question_classified",
@@ -445,6 +475,11 @@ def n_human_review(state: WState) -> dict:
     if deferred:
         reasons.append("possible contributors were deferred by the query budget and need confirmation")
         risk = max_risk(risk, "medium")
+    degraded = state.get("degraded", [])
+    if degraded:
+        reasons.append(f"{len(degraded)} analyst(s) failed/timed out and were excluded — "
+                       "evidence is partial and needs confirmation")
+        risk = max_risk(risk, "medium")
     # Every recommendation is business-impacting: it always routes to an owner for
     # a human-reviewed decision rather than an automatic system change.
     reasons.append("recommended actions are business-impacting and require owner review before execution")
@@ -665,6 +700,43 @@ def n_synthesize(state: WState) -> dict:
     return {"answer": answer}
 
 
+def n_gated(state: WState) -> dict:
+    """Terminal node for inputs stopped at the gate: a refused (sensitive/PII) request
+    or an ambiguous question needing clarification. No retrieval, no SQL, no evidence —
+    just a clear, safe message. A refusal also raises a human-review request."""
+    a: AuditLog = state["audit"]
+    intent = state.get("intent")
+    msg = state.get("gate_message", "")
+    review = None
+    if intent == "refused":
+        headline = "Request refused — outside the governed, read-only, synthetic scope."
+        review = a.create_review_request(
+            reason="real personal/sensitive/proprietary data detected in the request",
+            risk_level="high", impacted_owner="Data Governance",
+            recommended_action="Resubmit using the synthetic dataset with no real PII; any "
+                               "production or operational change stays outside this read-only assistant.",
+            evidence_summary="Input matched a sensitive-data pattern; not analyzed.")
+        caveats = ["No analysis was performed; the input was blocked at the scope gate.",
+                   "This prototype is read-only over synthetic data; no PII is accepted."]
+    else:  # clarify
+        headline = "A quick clarification will help me investigate accurately."
+        caveats = ["No default metric was assumed; please confirm the area and time frame.",
+                   "You can accept the governed default (digital conversion vs prior 7-day average)."]
+    summary = llm.draft_answer(state["question"], msg, "informational")
+    answer = {"intent": intent, "headline": headline, "summary": summary,
+              "confidence": "n/a", "llm_mode": llm.mode(), "owner": "Data Governance",
+              "definition": "Input/scope guardrail (no certified metric was queried).",
+              "metrics": [], "table": None, "chart": None, "drivers": [], "contributors": [],
+              "corroborating": [], "pruned": [], "degraded": [], "exec_summary": None,
+              "focus": None, "caveats": caveats, "review": review,
+              "recommendation": msg}
+    a.event(workflow_node="synthesize", decision_type="final_answer_ready", tool_name="Guardrails",
+            output_summary=headline[:70], status="blocked" if intent == "refused" else "caveated",
+            user_visible_note="Gated response assembled (no analysis performed).")
+    _step(state, "synthesize", f"Composed a {intent} response (no evidence query run).")
+    return {"answer": answer, "review": review, "queries_used": 0}
+
+
 def n_analytics(state: WState) -> dict:
     """Direct governed analytics query (a standalone insight, not the conversion
     investigation). Validate SQL -> run read-only DuckDB -> summarize with numbers."""
@@ -749,16 +821,21 @@ def build_workflow():
     sg.add_node("classify", n_classify)
     sg.add_node("analytics", n_analytics)
     sg.add_node("themed", n_themed)
+    sg.add_node("gated", n_gated)
     for name, fn in chain:
         sg.add_node(name, fn)
     sg.add_edge(START, "classify")
-    # Route: analytics/themed questions -> their direct node; otherwise the investigation.
+    # Route: refused/clarify -> terminal gate; analytics/themed -> direct node;
+    # otherwise the full conversion-drop investigation.
     def _route(s):
-        return {"analytics": "analytics", "themed": "themed"}.get(s.get("intent"), "sync_gate")
+        return {"analytics": "analytics", "themed": "themed",
+                "refused": "gated", "clarify": "gated"}.get(s.get("intent"), "sync_gate")
     sg.add_conditional_edges("classify", _route,
-                             {"analytics": "analytics", "themed": "themed", "sync_gate": "sync_gate"})
+                             {"analytics": "analytics", "themed": "themed",
+                              "gated": "gated", "sync_gate": "sync_gate"})
     sg.add_edge("analytics", END)
     sg.add_edge("themed", END)
+    sg.add_edge("gated", END)
     for (a, _), (b, _) in zip(chain, chain[1:]):
         sg.add_edge(a, b)
     sg.add_edge("synthesize", END)

@@ -18,6 +18,8 @@ import pathlib
 
 # Default local model (overridable via OLLAMA_MODEL in .env / environment).
 DEFAULT_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
+# Smaller fallback for lower-memory machines; used if the default isn't pulled.
+FALLBACK_MODEL = os.getenv("OLLAMA_FALLBACK_MODEL", "qwen2.5:3b")
 # Keep the demo responsive: bound the request and cap generation so a slow local
 # model (e.g. a 7B model on CPU) can't stall the investigation - it falls back to
 # the deterministic template if it exceeds these limits.
@@ -40,10 +42,17 @@ def probe() -> dict:
         import ollama
         models = ollama.Client(timeout=5).list().get("models", [])
         names = [m.get("model") or m.get("name") for m in models]
-        model = DEFAULT_MODEL if any(DEFAULT_MODEL in (n or "") for n in names) else (
-            names[0] if names else DEFAULT_MODEL)
+        # Prefer the default model; fall back to the smaller model; else first available.
+        if any(DEFAULT_MODEL in (n or "") for n in names):
+            model, note = DEFAULT_MODEL, f"using {DEFAULT_MODEL}"
+        elif any(FALLBACK_MODEL in (n or "") for n in names):
+            model, note = FALLBACK_MODEL, f"default {DEFAULT_MODEL} not pulled; using fallback {FALLBACK_MODEL}"
+        else:
+            model = names[0] if names else DEFAULT_MODEL
+            note = f"using {model}"
         return {"available": True, "mode": f"ollama:{model}", "model": model,
-                "detail": f"Ollama daemon reachable; using {model}."}
+                "fallback": FALLBACK_MODEL,
+                "detail": f"Ollama daemon reachable; {note} (fallback {FALLBACK_MODEL})."}
     except Exception as e:
         return {"available": False, "mode": "deterministic-fallback", "model": None,
                 "detail": f"No Ollama daemon ({type(e).__name__}); using deterministic "
