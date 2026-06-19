@@ -1,5 +1,5 @@
 """
-Safety & evaluation harness (Capstone Checkpoint 6).
+Safety & evaluation harness.
 
 Runs a grouped pack of automated checks that demonstrate the assistant's guardrails,
 groundedness, calibration, budget compliance, and auditability — the metric

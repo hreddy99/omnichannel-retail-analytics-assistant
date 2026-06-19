@@ -1,5 +1,5 @@
 """Reasoning is bounded: the anchor investigation respects beam width, depth, and
-the query budget — no uncontrolled loops (Checkpoint 6 ToT behavior)."""
+the query budget — no uncontrolled loops."""
 from skills import tot_skill as tot
 from workflows.investigation import run_investigation
 

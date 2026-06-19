@@ -1,5 +1,5 @@
 """
-Synthetic data validation checks (Plan section 14.4).
+Synthetic data validation checks.
 
 Confirms the generated data contains the expected demo signals and that the
 evaluation-only answer key is not exposed to the analysis connection. Run:

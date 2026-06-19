@@ -1,4 +1,4 @@
-# Business rules (Plan section 7.1). Required filters, comparison windows, and
+# Business rules. Required filters, comparison windows, and
 # baseline definitions used by SQL templates, validation, and final caveats.
 section_id: business_rules
 rules:

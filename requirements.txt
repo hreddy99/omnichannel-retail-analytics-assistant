@@ -1,4 +1,4 @@
-# Omnichannel Retail Analytics Assistant - free / local stack (Plan section 5)
+# Omnichannel Retail Analytics Assistant - free / local stack
 # All components run locally on a personal PC. No paid cloud services.
 
 # --- Core (required to run the app) ---
@@ -11,7 +11,7 @@ plotly>=5.18
 PyYAML>=6.0
 Faker>=22.0                # synthetic data generation (no PII, fixed seed)
 
-# --- Governed agent stack (Plan section 5) ---
+# --- Governed agent stack ---
 langgraph>=0.2             # workflow state machine / controller
 chromadb>=0.5             # local vector retrieval (built-in all-MiniLM-L6-v2 ONNX)
 sentence-transformers>=2.2 # local embeddings (all-MiniLM-L6-v2); pulls torch

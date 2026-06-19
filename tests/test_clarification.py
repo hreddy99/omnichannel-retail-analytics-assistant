@@ -1,5 +1,5 @@
 """Input guardrails route correctly: PII -> refused, ambiguous -> clarify,
-governed questions -> proceed (Checkpoint 6 input/scope checks)."""
+governed questions -> proceed."""
 from skills import input_skill as inputs
 from workflows.investigation import run_investigation
 

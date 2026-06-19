@@ -1,5 +1,5 @@
 """
-Input guardrails (Plan section 12.2 / Checkpoint 6 — input & scope checks).
+Input guardrails.
 
 Two deterministic, dependency-free checks applied to the RAW user question before
 any retrieval or analysis:

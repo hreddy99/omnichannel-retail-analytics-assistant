@@ -1,5 +1,5 @@
 """
-Governed catalog loader (Plan sections 7.1, 7.2).
+Governed catalog loader.
 
 Loads the split YAML catalog (metrics / tables / drivers / business_rules /
 guardrails / examples + a versions manifest), computes a per-file content_hash,
@@ -81,9 +81,9 @@ def _hash_for_section(section: str) -> str:
 
 def chunks() -> list[dict]:
     """
-    Semantic chunks for ChromaDB (Plan section 8): one chunk per metric / table /
+    Semantic chunks for ChromaDB: one chunk per metric / table /
     driver / business rule / SQL template / example question, each tagged with the
-    governance metadata used by the sync/version gate (Plan section 7.2).
+    governance metadata used by the sync/version gate.
     """
     cat = load_catalog()
     v = version()

@@ -1,5 +1,5 @@
 """
-LangGraph workflow controller (Plan sections 6, 10, 15).
+LangGraph workflow controller.
 
 A real LangGraph StateGraph implementing the ReAct-style loop: classify ->
 sync_gate -> retrieve -> validate -> relate -> baseline -> tot_gate -> beam ->
@@ -165,7 +165,7 @@ def classify_intent(question: str):
 def n_classify(state: WState) -> dict:
     a: AuditLog = state["audit"]
     refusal = guardrails.refuse_write(state["question"])
-    # Input/scope guardrail (Checkpoint 6): refuse real PII / sensitive data before
+    # Input/scope guardrail: refuse real PII / sensitive data before
     # any retrieval or analysis, and route it for governance review.
     sensitive = inputs.detect_sensitive(state["question"])
     if sensitive:
@@ -199,7 +199,7 @@ def n_classify(state: WState) -> dict:
               "a multi-signal investigation, not the conversion-drop path.")
         return {"refusal": refusal, "queries_used": 0, "intent": "themed", "focus": theme_id}
     intent, focus = classify_intent(state["question"])
-    # Ambiguity check (Checkpoint 6): an anchorless question would otherwise default to
+    # Ambiguity check: an anchorless question would otherwise default to
     # the conversion narrative; instead ask one clarifying question first. A detected
     # write request has a clear operational intent, so it flows through to the read-only
     # refusal + human review rather than being treated as ambiguous.
@@ -369,7 +369,7 @@ def n_critic(state: WState) -> dict:
     fresh_ok = guardrails.check_freshness(catalog.version(), g.graph["catalog_version"],
                                           g.graph.get("source_hash"))[0]
 
-    # governance pre-screen (Plan section 12)
+    # governance pre-screen
     ung = tot.ungoverned_branch()
     tot.score_branch(ung, g, fresh_ok)
     ung.finding = ("No certified metric or approved table backs this; SQL validator "
@@ -448,7 +448,7 @@ def n_evidence_gate(state: WState) -> dict:
 
 
 def n_human_review(state: WState) -> dict:
-    """Human-review gate (Plan section 12.3 / 14). Recommendations are never
+    """Human-review gate. Recommendations are never
     executed automatically — this evaluates the safety triggers and raises a
     HumanReviewRequest so high-risk / low-confidence / conflicting / business-
     impacting findings are reviewed by their owner before any action."""

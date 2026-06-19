@@ -1,5 +1,5 @@
 """
-Conditional Tree-of-Thought beam search (Plan section 11).
+Conditional Tree-of-Thought beam search.
 
 Generates candidate driver branches, runs one read-only DuckDB evidence query
 per branch, scores each on the 0-14 rubric (11.1), prunes weak branches, and
@@ -16,7 +16,7 @@ import pandas as pd
 
 from skills import catalog_skill as catalog, graph_skill as graph, sql_skill as guardrails
 
-BEAM_WIDTH = 2          # Plan section 11.1 — ToT keeps the top 2 primary drivers
+BEAM_WIDTH = 2          # ToT keeps the top 2 primary drivers
 DEPTH_LIMIT = 2         # driver -> sub-driver refinement
 # The unified app dispatches the full specialized analyst team in parallel, so the
 # operational query bound is one baseline query plus one read-only query per domain
@@ -212,7 +212,7 @@ def make_branch(driver: str) -> Branch:
 
 
 def ungoverned_branch() -> Branch:
-    """A plausible-sounding hypothesis with no governed backing (Plan section 12)."""
+    """A plausible-sounding hypothesis with no governed backing."""
     b = Branch(driver="price_increase", label="Price increase (proposed)", owner="",
                hypothesis="Maybe prices rose and deterred buyers?", governed=False)
     b.sql = "SELECT avg(price) FROM pricing WHERE date = 'yesterday'"

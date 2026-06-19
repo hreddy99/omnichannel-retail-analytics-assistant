@@ -12,7 +12,7 @@ data:            ## Regenerate the synthetic dataset and print row counts
 catalog:         ## Validate the governed YAML catalog (loads + hashes)
 	python scripts/validate_catalog.py
 
-validate:        ## Run the Plan section 14.4 data-validation checks
+validate:        ## Run the data-validation checks
 	python -m evals.validation
 
 test:            ## Run the unit / contract test suite

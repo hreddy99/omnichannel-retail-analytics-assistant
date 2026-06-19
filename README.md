@@ -83,7 +83,7 @@ Rebuild / validate the synthetic data:
 
 ```bash
 python -m data.generator    # row counts per table
-python -m evals.validation   # Plan section 14.4 checks
+python -m evals.validation   # synthetic-data validation checks
 ```
 
 ## App pages
@@ -102,7 +102,7 @@ answer → Multi-agent team → Evidence → Trust details → ToT trace → Tec
 cross-functional **executive briefings** (multi-agent), 15 direct analytics questions,
 and 12 themed health / trend / risk reviews.
 
-### Safety & governance (Checkpoint 6)
+### Safety & governance
 
 Guardrails are enforced in code, not promised in a prompt: a read-only SQL validator
 (SELECT-only over approved tables), write-refusal, **PII / sensitive-input refusal**,
@@ -114,7 +114,7 @@ pass/fail results and local latency. The local LLM only drafts wording — **Oll
 `qwen2.5:7b` default, `qwen2.5:3b` fallback, deterministic templates offline** —
 while governed tools decide source truth, SQL execution, evidence, and safety.
 
-## Free / local tool stack (Plan section 5)
+## Free / local tool stack
 
 | Layer | Tool | Notes |
 |-------|------|-------|
@@ -173,14 +173,14 @@ data/                  Synthetic data
   generator.py         Faker fact_/dim_ generator + seeded scenarios + eval-only key
 evals/                 Evaluation harness
   validation.py        Synthetic-data + seeded-scenario validation checks
-  safety_suite.py      Grouped safety & evaluation harness (Checkpoint 6 metrics)
+  safety_suite.py      Grouped safety & evaluation harness
 catalog/               Split YAML catalog (source of truth)
   metrics.yaml tables.yaml drivers.yaml business_rules.yaml
   guardrails.yaml examples.yaml versions.yaml
 prompts/               Structured prompt templates
 scripts/               make_data / validate_catalog helpers
 tests/                 Unit + UI-contract tests (pytest)
-docs/                  Architecture notes + checkpoint documents
+docs/                  Architecture & design notes
 ```
 
 ## Safety & governance

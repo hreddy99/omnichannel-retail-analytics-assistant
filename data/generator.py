@@ -1,16 +1,16 @@
 """
-Synthetic retail data generation (Plan section 14).
+Synthetic retail data generation.
 
 Uses **Faker** for realistic dimension entities (products, brands, vendors,
 campaigns) and vectorized numpy for the high-volume fact tables, all under a
 single fixed seed so the DuckDB database is repeatable before demos. No PII, no
 proprietary data - random surrogate identifiers only.
 
-Produces the fact_/dim_ model from Plan section 14.2 and seeds the demo
-scenarios from 14.3 (conversion drop, paid-social shift, inventory, fulfillment,
-and a funnel-behavior signal). The seeded "expected outcomes" are written to a
+Produces the fact_/dim_ model and seeds the demo scenarios (conversion drop,
+paid-social shift, inventory, fulfillment, and a funnel-behavior signal). The
+seeded "expected outcomes" are written to a
 separate evaluation-only table (`eval_expected_outcomes`) that the assistant
-never reads during normal analysis (Plan sections 14, 18).
+never reads during normal analysis.
 """
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ from faker import Faker
 
 SEED = 42
 RAMP_DAYS = 10                # gentle operational-degradation window before "yesterday"
-BASELINE_DAYS = 40            # >= 30-45 baseline days (Plan 14.1) ...
+BASELINE_DAYS = 40            # >= 30-45 baseline days ...
 N_DAYS = BASELINE_DAYS + 1    # ... plus one seeded "yesterday"
 TODAY = dt.date(2026, 6, 7)
 

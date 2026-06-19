@@ -1,4 +1,4 @@
-"""Typed contracts (Plan section 6) and the human-review gate (Plan 12.3 / 14)."""
+"""Typed contracts and the human-review gate."""
 from agents.contracts import (AgentTask, AgentFinding, BranchState, AuditEvent,
                               HumanReviewRequest, max_risk)
 from app import content as P

@@ -1,5 +1,5 @@
-# Approved synthetic tables (Plan sections 7.1, 14.2). The SQL validator blocks
-# any table not listed here. fact_/dim_ naming mirrors the plan's data model.
+# Approved synthetic tables. The SQL validator blocks
+# any table not listed here. fact_/dim_ naming reflects the medallion data model.
 section_id: tables
 tables:
   fact_sessions:

@@ -1,6 +1,6 @@
-# Governed metric catalog (Plan section 7.1). Authoritative source of truth.
+# Governed metric catalog. Authoritative source of truth.
 # ChromaDB chunks and the NetworkX graph are generated from / validated against
-# this file. On conflict, YAML wins (Plan section 12).
+# this file. On conflict, YAML wins.
 section_id: metrics
 metrics:
   digital_conversion_rate:
