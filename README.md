@@ -68,7 +68,6 @@ Other subcommands:
 ```bash
 python tools.py setup      # create .venv and install dependencies
 python tools.py validate   # run the synthetic-data validation checks
-python tools.py html       # generate the standalone project_plan.html
 python tools.py run        # launch the Streamlit app (pass-through args, e.g. --server.port 8502)
 python tools.py doctor     # print environment / tool status
 ```
@@ -78,12 +77,6 @@ python tools.py doctor     # print environment / tool status
 ```bash
 pip install -r requirements.txt
 streamlit run app/main.py
-```
-
-Generate the standalone interactive plan as HTML:
-
-```bash
-python build_html.py            # writes project_plan.html
 ```
 
 Rebuild / validate the synthetic data:
@@ -101,7 +94,7 @@ python -m evals.validation   # Plan section 14.4 checks
 | 🏗️ Architecture | LangGraph flow, live NetworkX graph, YAML catalog, agent roster, conflict rules |
 | 📚 Data Catalog | The 18 governed tables, certified metrics, drivers, and the live knowledge graph |
 | 🔬 Live Demo | Runs the real pipeline; live step trace + multi-agent team + four trace levels |
-| 🧪 Evaluation | Automated data, guardrail, and question-routing checks |
+| 🧪 Evaluation & Safety | Grouped pass/fail harness: data, adversarial SQL/PII block-rate, retrieval, knowledge graph, reasoning budget, human-in-the-loop, groundedness, calibration, audit completeness, latency, and routing |
 
 The **Live Demo** streams each executing step, then exposes seven tabs: Business
 answer → Multi-agent team → Evidence → Trust details → ToT trace → Technical audit
@@ -109,12 +102,24 @@ answer → Multi-agent team → Evidence → Trust details → ToT trace → Tec
 cross-functional **executive briefings** (multi-agent), 15 direct analytics questions,
 and 12 themed health / trend / risk reviews.
 
+### Safety & governance (Checkpoint 6)
+
+Guardrails are enforced in code, not promised in a prompt: a read-only SQL validator
+(SELECT-only over approved tables), write-refusal, **PII / sensitive-input refusal**,
+**clarification on ambiguous questions**, catalog version/hash freshness gates, guarded
+causal language (*likely driver / possible contributor*, never asserted), and a
+human-review gate for high-risk, low-confidence, conflicting, degraded, or business-
+impacting findings. The **Evaluation & Safety** page reruns the whole pack with
+pass/fail results and local latency. The local LLM only drafts wording — **Ollama
+`qwen2.5:7b` default, `qwen2.5:3b` fallback, deterministic templates offline** —
+while governed tools decide source truth, SQL execution, evidence, and safety.
+
 ## Free / local tool stack (Plan section 5)
 
 | Layer | Tool | Notes |
 |-------|------|-------|
 | UI | Streamlit | multi-tab investigation view |
-| Controller | **LangGraph** | real `StateGraph`, 10 nodes |
+| Controller | **LangGraph** | real `StateGraph`; classify → governed investigation / analytics / themed / gated paths |
 | Source of truth | YAML | split catalog + version manifest, per-file `content_hash` |
 | Retrieval | **ChromaDB + sentence-transformers** | all-MiniLM-L6-v2; sync/version gate |
 | Graph | NetworkX | metric/table/system/driver/owner, version+hash gated |
@@ -136,15 +141,14 @@ and 12 themed health / trend / risk reviews.
 ## Repository layout
 
 ```
-build_html.py          Standalone interactive project_plan.html generator
 tools.py               One-command setup / validate / run task runner
 pyproject.toml         Package metadata + dependencies
 requirements.txt       Free/local dependencies
 .env.example           Optional local LLM (Ollama) configuration template
 
 app/                   Streamlit UI
-  main.py              Streamlit app (pages, multi-tab Live Demo)
-  content.py           Structured plan content (shared by app + HTML)
+  main.py              Streamlit app (5 pages, multi-tab Live Demo)
+  content.py           Structured product content for the pages
   diagrams.py          Graphviz DOT diagrams rendered in-app
 agents/                Multi-agent analyst team
   team.py              Specialized domain agents + parallel dispatch
@@ -154,20 +158,22 @@ skills/                Governed capability wrappers (anatomy: <name>/SKILL.md)
   retrieval_skill.py   ChromaDB + sentence-transformers (+ fallbacks) + sync gate
   graph_skill.py       NetworkX graph from YAML (version + hash gated)
   sql_skill.py         SQL safety / freshness / conflict / write refusal
+  input_skill.py       PII / sensitive-input refusal + ambiguous-question clarification
   tot_skill.py         Per-domain evidence queries + ToT beam-search scoring rubric
-  audit_skill.py       Append-only audit trail + action log (section 17.2)
+  audit_skill.py       Append-only audit trail + action log
   ui_format_skill.py   Per-question chart resolution + business formatting
-  llm_skill.py         Ollama wrapper with deterministic fallback
+  llm_skill.py         Ollama wrapper (default + fallback model) with deterministic fallback
   spec_loader.py       Loads agent specs + SKILL.md anatomy for the UI
 workflows/             LangGraph orchestration
-  graph.py             LangGraph StateGraph controller (nodes + routing; incl. briefing path)
+  graph.py             LangGraph StateGraph controller (nodes + routing; investigation / analytics / themed / gated)
   investigation.py     Orchestrator (public run_investigation entry point)
   insights.py          15 standalone analytics questions
   themes.py            12 themed health / trend / risk reviews
 data/                  Synthetic data
   generator.py         Faker fact_/dim_ generator + seeded scenarios + eval-only key
 evals/                 Evaluation harness
-  validation.py        Plan section 14.4 validation checks
+  validation.py        Synthetic-data + seeded-scenario validation checks
+  safety_suite.py      Grouped safety & evaluation harness (Checkpoint 6 metrics)
 catalog/               Split YAML catalog (source of truth)
   metrics.yaml tables.yaml drivers.yaml business_rules.yaml
   guardrails.yaml examples.yaml versions.yaml

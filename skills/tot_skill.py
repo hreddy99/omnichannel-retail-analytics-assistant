@@ -16,11 +16,14 @@ import pandas as pd
 
 from skills import catalog_skill as catalog, graph_skill as graph, sql_skill as guardrails
 
-BEAM_WIDTH = 2          # Plan section 11.1
-DEPTH_LIMIT = 2
-DRIVER_PATH_BUDGET = 3  # Plan section 13: up to three driver-path queries
-FOLLOWUP_BUDGET = 1
-QUERY_BUDGET = 1 + DRIVER_PATH_BUDGET + FOLLOWUP_BUDGET   # 1 baseline + 3 + 1 = 5
+BEAM_WIDTH = 2          # Plan section 11.1 — ToT keeps the top 2 primary drivers
+DEPTH_LIMIT = 2         # driver -> sub-driver refinement
+# The unified app dispatches the full specialized analyst team in parallel, so the
+# operational query bound is one baseline query plus one read-only query per domain
+# analyst (not the narrower beam-only path). Keeping this honest so the UI never
+# shows "queries used" exceeding the budget.
+N_DOMAIN_ANALYSTS = 7
+QUERY_BUDGET = 1 + N_DOMAIN_ANALYSTS   # 8: 1 baseline + 7 domain analysts
 
 PRIMARY_DRIVERS = ["campaign_mix", "inventory_availability", "fulfillment_constraints"]
 RESERVE_DRIVER = "funnel_behavior"

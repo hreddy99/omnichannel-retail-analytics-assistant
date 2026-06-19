@@ -7,7 +7,6 @@ you can set up and run everything from a command prompt:
 
     python tools.py setup       # create .venv and install all dependencies
     python tools.py validate    # run the synthetic-data validation checks
-    python tools.py html        # generate the standalone project_plan.html
     python tools.py run          # launch the Streamlit app
     python tools.py doctor      # print environment / tool status
     python tools.py all          # setup -> validate -> run  (default)
@@ -87,12 +86,6 @@ def cmd_validate(_args) -> int:
     return _run([str(py), "-m", "evals.validation"])
 
 
-def cmd_html(_args) -> int:
-    py = ensure_venv()
-    _banner("Generating interactive project_plan.html")
-    return _run([str(py), str(ROOT / "build_html.py")])
-
-
 def cmd_run(args) -> int:
     py = venv_python()
     if not py.exists():
@@ -136,7 +129,7 @@ def cmd_all(args) -> int:
     return cmd_run(args)
 
 
-COMMANDS = {"setup": cmd_setup, "validate": cmd_validate, "html": cmd_html,
+COMMANDS = {"setup": cmd_setup, "validate": cmd_validate,
             "run": cmd_run, "doctor": cmd_doctor, "all": cmd_all}
 
 

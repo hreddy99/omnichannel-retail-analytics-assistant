@@ -128,42 +128,6 @@ def page_overview():
 
 
 # ==========================================================================
-# PAGE: Feasibility
-# ==========================================================================
-def page_feasibility():
-    st.title("✅ Feasibility Review")
-    st.write("The plan's core claim is a **free, local, read-only** MVP runnable on a "
-             "personal PC. This prototype confirms it end-to-end.")
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Required paid services", "0")
-    c2.metric("External APIs to run demo", "0")
-    c3.metric("Runs locally", "Yes")
-    st.info("**Verdict: Feasible.** The Live Demo runs the full governed workflow "
-            "(Faker synthetic data → ChromaDB retrieval → NetworkX graph → DuckDB evidence "
-            "→ conditional ToT beam search → guardrails → grounded answer) with free, local "
-            "tools. Ollama (LLM) and sentence-transformers downloads are optional enhancements "
-            "with graceful fallbacks, so the architecture is demonstrable on any laptop.")
-    st.subheader("Free / local tool stack")
-    rows = [(t, r, ("✅ " + f if f == "Yes" else "🔵 " + f), n) for (t, r, f, n) in P.TOOL_STACK]
-    _table(rows, ["Tool", "Role", "Free / on PC?", "MVP notes"])
-
-    st.subheader("Implementation issues found in this hosted sandbox (and how they're handled)")
-    st.markdown(
-        "- **Ollama** needs a separate daemon + multi-GB model — not present in a cloud "
-        "sandbox. Handled: optional client with a deterministic template fallback (works on your PC).\n"
-        "- **sentence-transformers** downloads its model from huggingface.co, which is blocked "
-        "here. Handled: falls back to ChromaDB's bundled ONNX build of the **same all-MiniLM-L6-v2** "
-        "model, then to a deterministic hashing embedder.\n"
-        "- **ChromaDB** install collided with the system PyYAML. Handled: documented install flag.\n"
-        "- The **active embedder and LLM mode are shown in Trust details** so degradation is visible.")
-
-    st.subheader("Implementation-readiness checklist")
-    _table(P.READINESS, ["Question", "Answer"])
-    st.subheader("Risks & mitigations")
-    _table(P.RISKS, ["Risk", "Mitigation"])
-
-
-# ==========================================================================
 # PAGE: Architecture
 # ==========================================================================
 def _flow_figure():
@@ -255,41 +219,6 @@ def _arch_main():
 
 
 # ==========================================================================
-# PAGE: Step-by-Step Plan
-# ==========================================================================
-def page_plan():
-    st.title("🗺️ Step-by-Step Implementation Plan")
-    st.subheader("Capability roadmap")
-    _table(P.PHASE_ROADMAP, ["Stage", "Primary objective", "Scope", "Success criteria"])
-    st.subheader("Implementation milestones")
-    built = {"1", "2", "3", "4", "5", "6", "7", "8", "9"}
-    rows = [(ph, d, ex, "✅ Built" if ph.split(".")[0] in built else "⬜ Backlog")
-            for ph, d, ex in P.MILESTONES]
-    _table(rows, ["Milestone", "Deliverables", "Exit criteria", "Prototype status"])
-    st.subheader("Conditional Tree-of-Thought — depth model")
-    _table(P.TOT_DEPTH, ["ToT element", "Definition in this project"])
-    c1, c2 = st.columns(2)
-    with c1:
-        st.subheader("ToT scoring rubric")
-        rub = [(c, f"0–{m}") for c, m in P.TOT_RUBRIC]
-        rub.append(("**Maximum total**", f"**{sum(m for _, m in P.TOT_RUBRIC)}**"))
-        _table(rub, ["Evaluation criterion", "Score"])
-        st.caption(P.TOT_THRESHOLDS)
-    with c2:
-        st.subheader("Synthetic tables")
-        _table(P.SYNTH_TABLES, ["Table", "Grain", "Role"])
-    st.subheader("Seeded demo scenarios")
-    _table(P.SCENARIOS, ["Seeded scenario", "Injected pattern", "Expected evidence", "Owner"])
-    st.subheader("Functional requirements")
-    _table(P.FUNC_REQS, ["ID", "Requirement", "Priority", "Acceptance criteria"])
-    with st.expander("Non-functional requirements"):
-        _table(P.NON_FUNCTIONAL, ["Area", "Requirement"])
-    st.subheader("MVP demo questions")
-    for i, q in enumerate(P.DEMO_QUESTIONS, 1):
-        st.markdown(f"{i}. {q}")
-
-
-# ==========================================================================
 # PAGE: Live Demo
 # ==========================================================================
 def _scorecard(b):
@@ -343,6 +272,13 @@ def _tab_business(t):
         st.warning(f"{icon} **Human review required ({rv['risk_level']} risk)** — routed to "
                    f"**{rv['impacted_owner']}**. {rv['reason']}. Recommended (pending review): "
                    f"{rv['recommended_action']}")
+
+    # Input/scope guardrail outcomes (no analysis was performed).
+    if intent in ("refused", "clarify"):
+        (st.error if intent == "refused" else st.info)(a["summary"])
+        for cv in a.get("caveats", []):
+            st.caption("• " + cv)
+        return
 
     if intent in ("analytics", "themed"):
         mets = a.get("metrics") or a.get("signals", [])
@@ -472,6 +408,11 @@ def _tab_trust(t):
     c2.metric("Index in sync", "Yes" if sync["in_sync"] else "No")
     c3.metric("LLM mode", a.get("llm_mode", "n/a").split(":")[0])
     st.caption(f"Embedder: {sync['embedder']} · {sync['n_chunks']} governed chunks indexed.")
+    _probe = llm.probe()
+    st.caption(f"LLM boundary: drafting/wording only — default `{llm.DEFAULT_MODEL}`, "
+               f"fallback `{llm.FALLBACK_MODEL}`, then deterministic templates. "
+               f"Active: {_probe['detail']} Governed tools (YAML, DuckDB, NetworkX, guardrails) "
+               "decide source truth, SQL execution, evidence, and safety.")
     st.markdown("**Retrieved context (top-k from ChromaDB):**")
     if t["retrieval"]:
         rows = [{"source_type": r["metadata"].get("source_type"), "name": r["metadata"].get("name"),
@@ -668,44 +609,7 @@ def page_demo():
 
 
 # ==========================================================================
-# PAGE: Interactive Plan
-# ==========================================================================
-def page_interactive_plan():
-    st.title("📄 Interactive Project Plan")
-    st.caption(f"{P.SUBTITLE} · {P.TAGLINE}")
-    if st.button("⬇️ Generate downloadable HTML", type="primary"):
-        from build_html import render_html
-        st.download_button("Download project_plan.html", data=render_html(),
-                           file_name="project_plan.html", mime="text/html")
-        st.success("HTML generated — click the download button above.")
-    sections = [
-        ("1 · Executive summary", lambda: st.write(P.EXECUTIVE_SUMMARY)),
-        ("2 · Feasibility decision", lambda: st.write(P.FEASIBILITY)),
-        ("3 · Business problem & users", lambda: _table(P.BUSINESS_ROLES, ["Role", "Question", "Value"])),
-        ("4 · Capability roadmap", lambda: _table(P.PHASE_ROADMAP, ["Stage", "Objective", "Scope", "Success"])),
-        ("5 · Tool stack", lambda: _table(P.TOOL_STACK, ["Tool", "Role", "Free?", "MVP notes"])),
-        ("6 · Architecture layers", lambda: _table(P.ARCH_LAYERS, ["Layer", "Component", "Responsibility", "Control"])),
-        ("7 · YAML catalog files", lambda: _table(P.YAML_FILES, ["File", "Contents", "Used by"])),
-        ("9 · Knowledge graph objects", lambda: _table(P.GRAPH_OBJECTS, ["Object", "Examples", "Purpose"])),
-        ("10 · Agent roles", lambda: _table(P.AGENT_ROLES, ["Role", "Purpose", "Tools", "Output"])),
-        ("11 · ToT depth model", lambda: _table(P.TOT_DEPTH, ["Element", "Definition"])),
-        ("12 · Source-conflict rules", lambda: _table(P.CONFLICT_RULES, ["Situation", "Decision", "Behavior"])),
-        ("14 · Synthetic scenarios", lambda: _table(P.SCENARIOS, ["Scenario", "Pattern", "Evidence", "Owner"])),
-        ("16 · Functional requirements", lambda: _table(P.FUNC_REQS, ["ID", "Requirement", "Priority", "Acceptance"])),
-        ("17 · UI & trace levels", lambda: (_table(P.UI_SECTIONS, ["Section", "Content"]),
-                                            _table(P.TRACE_LEVELS, ["Level", "Audience", "Content"]))),
-        ("17.2 · Audit event schema", lambda: _table(P.AUDIT_SCHEMA, ["Field", "Example", "Purpose"])),
-        ("19 · Milestones", lambda: _table(P.MILESTONES, ["Milestone", "Deliverables", "Exit criteria"])),
-        ("20 · Risks", lambda: _table(P.RISKS, ["Risk", "Mitigation"])),
-        ("24 · Readiness checklist", lambda: _table(P.READINESS, ["Question", "Answer"])),
-    ]
-    for i, (title, render) in enumerate(sections):
-        with st.expander(title, expanded=(i == 0)):
-            render()
-
-
-# ==========================================================================
-# PAGE: Diagrams
+# PAGE: Architecture — flow diagrams, agents, skills
 # ==========================================================================
 def _arch_diagrams():
     from app import diagrams
@@ -790,12 +694,12 @@ def page_catalog():
 # ==========================================================================
 # PAGE: Evaluation
 # ==========================================================================
-@st.cache_data(show_spinner="Running checks…")
+@st.cache_data(show_spinner="Running the safety & evaluation suite…")
 def _eval_results():
-    from evals import validation as data_validation
+    from evals import safety_suite
     from workflows.graph import classify_intent
-    rows = list(data_validation.run_checks())
-    # classification routing checks
+    res = safety_suite.run_suite()
+    # Question-routing group (uses the app's scenario library).
     expected = ([(q, "overall" if i == 0 else "driver") for i, q in enumerate(P.DEMO_QUESTIONS[:8])]
                 + [(q, "briefing") for q in P.BRIEFING_QUESTIONS]
                 + [(q, "analytics") for q in insights.questions()]
@@ -804,21 +708,33 @@ def _eval_results():
     for q, exp in expected:
         got = "analytics" if insights.match(q) else "themed" if themes.match(q) else classify_intent(q)[0]
         ok += int(got == exp or (exp == "driver" and got in ("driver", "actions", "trust", "caveats")))
-    rows.append({"check": "Question routing (intent classification)", "ok": ok == len(expected),
-                 "detail": f"{ok}/{len(expected)} questions routed to the expected path"})
-    return rows
+    res["groups"].append({"group": "Question routing", "checks": [
+        {"check": "Every demo / analytics / themed / briefing question routes to its expected path",
+         "ok": ok == len(expected), "detail": f"{ok}/{len(expected)} questions routed correctly"}]})
+    res["passed"] += int(ok == len(expected))
+    res["total"] += 1
+    return res
 
 
 def page_evaluation():
-    st.title("🧪 Evaluation")
-    st.caption("Automated checks that the synthetic data, guardrails, and routing behave as designed.")
-    rows = _eval_results()
-    passed = sum(r["ok"] for r in rows)
-    c1, c2 = st.columns(2)
-    c1.metric("Checks passed", f"{passed}/{len(rows)}")
-    c2.metric("Status", "✅ All passing" if passed == len(rows) else "⚠️ Review")
-    df = pd.DataFrame([{"": "✅" if r["ok"] else "⚠️", "check": r["check"], "detail": r["detail"]} for r in rows])
-    st.dataframe(df, width="stretch", hide_index=True)
+    st.title("🧪 Evaluation & Safety")
+    st.caption("Automated checks across data, guardrails, retrieval, knowledge graph, reasoning "
+               "budget, human-in-the-loop, groundedness, calibration, and auditability "
+               "(Capstone Checkpoint 6 metrics). Reproducible from a fixed seed.")
+    res = _eval_results()
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Checks passed", f"{res['passed']}/{res['total']}")
+    c2.metric("Status", "✅ All passing" if res["passed"] == res["total"] else "⚠️ Review")
+    c3.metric("Local latency (p50 / p95)",
+              f"{res['latency']['p50_ms']} / {res['latency']['p95_ms']} ms")
+    for g in res["groups"]:
+        n_ok = sum(c["ok"] for c in g["checks"])
+        n = len(g["checks"])
+        with st.expander(f"{'✅' if n_ok == n else '⚠️'}  {g['group']} — {n_ok}/{n}",
+                         expanded=(n_ok != n)):
+            df = pd.DataFrame([{"": "✅" if c["ok"] else "⚠️", "check": c["check"],
+                                "detail": c["detail"]} for c in g["checks"]])
+            st.dataframe(df, width="stretch", hide_index=True)
 
 
 # ==========================================================================
