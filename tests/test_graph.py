@@ -1,5 +1,5 @@
 """Knowledge-graph coverage: every governed driver resolves a
-driver -> tables -> owner path (Checkpoint 6 graph accuracy)."""
+driver -> tables -> owner path."""
 from skills import catalog_skill as catalog, graph_skill as graph
 
 

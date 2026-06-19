@@ -1,5 +1,5 @@
 """
-Typed agent-communication contracts (Plan section 6).
+Typed agent-communication contracts.
 
 Agents communicate through typed shared state, not free-form chat. Each agent
 receives a scoped task (`AgentTask`) and returns a structured result
@@ -92,7 +92,7 @@ class AuditEvent:
 
 @dataclass
 class HumanReviewRequest:
-    """Raised when safety criteria require approval or escalation (Plan 12.3).
+    """Raised when safety criteria require approval or escalation.
 
     The assistant only ever produces recommendations; this object records WHY a
     finding must be reviewed by its owner before any business action is taken.

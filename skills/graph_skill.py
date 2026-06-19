@@ -1,10 +1,10 @@
 """
-Knowledge graph (Plan section 9, milestone 5).
+Knowledge graph.
 
 NetworkX graph generated FROM the YAML catalog and stamped with catalog_version
-+ source hash. Node kinds: metric, table, system, driver, owner. Edge types
-follow Plan section 9 (measured_by, feeds_table, affects, owned_by, uses,
-caveated_by). If the stored version does not match the active catalog, traversal
++ source hash. Node kinds: metric, table, system, driver, owner. Edge types are
+measured_by, feeds_table, affects, owned_by, uses, and caveated_by. If the stored
+version does not match the active catalog, traversal
 is blocked and the graph is rebuilt - keeping the graph subordinate to YAML.
 """
 from __future__ import annotations

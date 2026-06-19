@@ -1,5 +1,5 @@
 """Retrieval governance: the certified metric is retrievable and every governed
-chunk carries the metadata the version/sync gate needs (Checkpoint 6)."""
+chunk carries the metadata the version/sync gate needs."""
 from skills import catalog_skill as catalog
 
 

@@ -1,5 +1,5 @@
 """
-Retrieval layer (Plan sections 7.2, 8) - real ChromaDB + sentence-transformers.
+Retrieval layer - real ChromaDB + sentence-transformers.
 
 Builds a local vector index over the governed YAML chunks (one chunk per
 metric / table / driver / rule / template / example) with full governance
@@ -10,7 +10,7 @@ so the UI can show it in Trust details.
 
 Implements the catalog sync/version gate: each retrieved chunk's stored
 content_hash is compared to the current YAML hash, and stale chunks are rejected
-and re-embedded before use (Plan sections 7.2, 12).
+and re-embedded before use.
 """
 from __future__ import annotations
 
@@ -76,7 +76,7 @@ class RetrievalIndex:
         self._n = len(chunks)
 
     def retrieve(self, query: str, top_k: int = 5, source_type: str | None = None) -> list[dict]:
-        """Top-k retrieval (Plan section 8). Applies the sync gate: a chunk whose
+        """Top-k retrieval. Applies the sync gate: a chunk whose
         stored content_hash != current YAML hash is rejected as stale."""
         where = {"source_type": source_type} if source_type else None
         res = self.collection.query(query_texts=[query], n_results=top_k, where=where)
@@ -91,7 +91,7 @@ class RetrievalIndex:
 
     @staticmethod
     def _exists_in_yaml(meta: dict) -> bool:
-        """Validate a retrieved entry against the certified catalog (Plan section 8)."""
+        """Validate a retrieved entry against the certified catalog."""
         cat = catalog.load_catalog()
         st = meta.get("source_type")
         name = meta.get("name")

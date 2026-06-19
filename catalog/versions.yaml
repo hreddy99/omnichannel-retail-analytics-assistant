@@ -1,4 +1,4 @@
-# Catalog version manifest (Plan section 7.2). The catalog sync/version gate
+# Catalog version manifest. The catalog sync/version gate
 # checks this version against ChromaDB chunk metadata and the NetworkX graph.
 # Per-file content_hash is computed at load time by skills/catalog_skill.py and compared
 # against retrieval/graph metadata; mismatch -> refresh/rebuild or block.

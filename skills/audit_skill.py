@@ -1,11 +1,10 @@
 """
-Audit trail + action log (Plan section 17.2).
+Audit trail + action log.
 
 Append-only, run-scoped event log capturing each workflow decision and tool call
 with safe summaries (no raw sensitive data, no full result sets). Implemented
 in-memory per run and serializable to JSONL/DuckDB. The action log converts
-findings into human-reviewed recommendations - never operational writes
-(Plan section 17.4, 18).
+findings into human-reviewed recommendations - never operational writes.
 """
 from __future__ import annotations
 
@@ -22,7 +21,7 @@ class AuditLog:
     reviews: list[dict] = field(default_factory=list)
 
     def step(self, node: str, detail: str, ok: bool = True):
-        """User-visible decision-log step (Plan section 17.3, level 1-2)."""
+        """User-visible decision-log step."""
         self.steps.append({"node": node, "detail": detail, "ok": ok})
 
     def event(self, *, workflow_node: str, decision_type: str, tool_name: str = "",
@@ -51,7 +50,7 @@ class AuditLog:
 
     def create_review_request(self, *, reason: str, risk_level: str, impacted_owner: str,
                               recommended_action: str, evidence_summary: str = "") -> dict:
-        """Record a HumanReviewRequest (Plan section 6 / 12.3). The assistant only
+        """Record a HumanReviewRequest. The assistant only
         recommends; this marks WHY an owner must review before any business action."""
         from agents.contracts import HumanReviewRequest
         req = HumanReviewRequest(

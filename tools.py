@@ -82,7 +82,7 @@ def cmd_setup(_args) -> int:
 
 def cmd_validate(_args) -> int:
     py = ensure_venv()
-    _banner("Validating synthetic data pipeline (Plan section 14.4)")
+    _banner("Validating the synthetic data pipeline")
     return _run([str(py), "-m", "evals.validation"])
 
 

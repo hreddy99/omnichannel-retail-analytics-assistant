@@ -1,4 +1,4 @@
-# Guardrails (Plan sections 12, 13, 18). Consumed by guardrail functions and the
+# Guardrails. Consumed by guardrail functions and the
 # final response template. The LLM never decides source authority on its own.
 section_id: guardrails
 sql_safety:

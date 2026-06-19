@@ -1,4 +1,4 @@
-# Business drivers (Plan sections 7.1, 9). Each driver is a candidate ToT branch
+# Business drivers. Each driver is a candidate ToT branch
 # mapping a hypothesis to the metric/tables it interrogates and the owner that
 # would act on it. Used for graph nodes, ToT candidate generation, owner routing.
 section_id: drivers
@@ -67,7 +67,7 @@ drivers:
     sub_drivers: [vendor_stockout, category_partner_alert]
     hypothesis: "A vendor's stockouts in a high-sales category should trigger a partner alert."
 
-# Enterprise systems shown for context only (no real connections - Plan section 9).
+# Enterprise systems shown for context only (no real connections).
 systems:
   - {name: "Ecommerce", domain: analytics}
   - {name: "OMS", domain: analytics}

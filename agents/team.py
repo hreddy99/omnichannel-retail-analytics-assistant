@@ -1,5 +1,5 @@
 """
-Multi-agent analyst team (Plan section: Agent Design & Reasoning Loop).
+Multi-agent analyst team.
 
 WHY MULTI-AGENT — DELIBERATE DESIGN DECISIONS
 ---------------------------------------------
@@ -87,7 +87,7 @@ class AgentResult:
     error: str = ""
 
     def to_finding(self, task_id: str = "", confidence: str = "") -> "AgentFinding":
-        """Project this result onto the typed AgentFinding contract (Plan 6)."""
+        """Project this result onto the typed AgentFinding contract."""
         from agents.contracts import AgentFinding
         rows = 0
         try:

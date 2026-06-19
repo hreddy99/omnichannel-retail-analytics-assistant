@@ -1,5 +1,5 @@
 """Adversarial safety: writes, unapproved tables, multi-statement, and PII inputs
-must be blocked 100% of the time before any query runs (Checkpoint 6)."""
+must be blocked 100% of the time before any query runs."""
 import pytest
 
 from skills import sql_skill as guardrails, input_skill as inputs

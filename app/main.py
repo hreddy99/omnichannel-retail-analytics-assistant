@@ -1,10 +1,10 @@
 """
 Omnichannel Retail Analytics Assistant - Streamlit app.
 
-Interactive companion to the detailed project plan AND a runnable prototype of
-the governed investigation workflow (ReAct + RAG + Knowledge Graph + conditional
-ToT beam search). The Live Demo runs the real LangGraph pipeline and exposes the
-four trace levels from Plan section 17.3.
+A runnable prototype of the governed investigation workflow (ReAct + RAG +
+Knowledge Graph + conditional ToT beam search). The Live Demo runs the real
+LangGraph pipeline and exposes four trace levels (business answer, evidence,
+trust details, and technical audit).
 
 Run:  streamlit run app/main.py
 """
@@ -648,7 +648,7 @@ def _arch_diagrams():
             st.markdown(s["instructions"])
 
     st.header("Typed agent contracts (state model)")
-    st.caption("Agents communicate through typed shared state, not free-form chat (Plan §6). "
+    st.caption("Agents communicate through typed shared state, not free-form chat. "
                "Each agent receives a scoped task and returns a structured finding; the "
                "Critic/ToT works in branch state; every step emits an audit event; and safety "
                "conditions raise a human-review request. Defined in `agents/contracts.py`.")
@@ -720,7 +720,7 @@ def page_evaluation():
     st.title("🧪 Evaluation & Safety")
     st.caption("Automated checks across data, guardrails, retrieval, knowledge graph, reasoning "
                "budget, human-in-the-loop, groundedness, calibration, and auditability "
-               "(Capstone Checkpoint 6 metrics). Reproducible from a fixed seed.")
+               ". Reproducible from a fixed seed.")
     res = _eval_results()
     c1, c2, c3 = st.columns(3)
     c1.metric("Checks passed", f"{res['passed']}/{res['total']}")

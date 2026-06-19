@@ -1,4 +1,4 @@
-"""The Plan section 14.4 data-validation checks must all pass."""
+"""The synthetic-data validation checks must all pass."""
 from evals.validation import run_checks
 
 

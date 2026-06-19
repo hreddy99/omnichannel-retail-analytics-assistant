@@ -1,5 +1,5 @@
 """
-Guardrail functions (Plan sections 12, 13, 18 / FR-05, FR-08, FR-10, FR-12).
+Guardrail functions.
 
 Deterministic Python checks driven by guardrails.yaml:
   * SQL safety        : read-only SELECT over catalog-approved tables
@@ -27,7 +27,7 @@ def _forbidden_pattern() -> re.Pattern:
     return re.compile(r"\b(" + "|".join(kws) + r")\b", re.IGNORECASE)
 
 
-# scoring thresholds from guardrails.yaml (Plan section 11.1)
+# scoring thresholds from guardrails.yaml
 def _thresholds() -> dict:
     return catalog.load_catalog().get("confidence_thresholds", {
         "prune_below": 7, "likely_driver_at": 10, "max_score": 14})
@@ -39,7 +39,7 @@ MAX_SCORE = 14
 
 
 def check_sql(sql: str) -> tuple[bool, str]:
-    """(ok, reason). Read-only SELECT over approved tables only (FR-05)."""
+    """(ok, reason). Read-only SELECT over approved tables only."""
     s = sql.strip().rstrip(";")
     if _forbidden_pattern().search(s):
         return False, "Blocked: write/DDL keyword detected. Prototype is read-only."
@@ -59,7 +59,7 @@ def check_sql(sql: str) -> tuple[bool, str]:
 
 def check_freshness(catalog_version: str, graph_version: str,
                     graph_hash: str | None = None) -> tuple[bool, str]:
-    """Catalog sync/version gate (Plan section 7.2)."""
+    """Catalog sync/version gate."""
     if catalog_version != catalog.version():
         return False, "Stale: catalog version drift detected."
     if graph_version != catalog.version():
@@ -70,7 +70,7 @@ def check_freshness(catalog_version: str, graph_version: str,
 
 
 def evidence_gate(score: int) -> str:
-    """Map a branch score to a confidence label (Plan section 11.1)."""
+    """Map a branch score to a confidence label."""
     if score < PRUNE_BELOW:
         return "pruned"
     if score < LIKELY_AT:
@@ -83,7 +83,7 @@ def overall_confidence(n_likely: int) -> str:
 
 
 def refuse_write(user_text: str) -> str | None:
-    """FR-12: never write to operational systems; convert to a recommendation."""
+    """Never write to operational systems; convert to a recommendation instead."""
     if re.search(r"\b(update|set|change|push|write|delete|reorder|launch|send|increase|cut|adjust)\b",
                  user_text, re.IGNORECASE):
         return ("This prototype is read-only and cannot modify operational systems "

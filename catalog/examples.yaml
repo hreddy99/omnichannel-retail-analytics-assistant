@@ -1,4 +1,4 @@
-# Approved analysis plans + SQL templates (Plan sections 7.1, 13). The LLM may
+# Approved analysis plans + SQL templates. The LLM may
 # fill parameters (date, metric, dimension, filter) but must not invent complex
 # SQL for the MVP. These are retrieved by ChromaDB and used as SQL fallback.
 section_id: examples

@@ -1,11 +1,11 @@
 """
-Local LLM wrapper (Plan section 5: Ollama).
+Local LLM wrapper.
 
 Ollama is used for planning hints and response drafting. It is OPTIONAL: the
 client probes for a running Ollama daemon at import; if none is reachable (e.g.
 in a headless/cloud sandbox), the wrapper falls back to deterministic,
 template-based text so the governed workflow still runs end-to-end. The LLM is
-never a source of truth - all claims come from DuckDB evidence (Plan section 6).
+never a source of truth - all claims come from DuckDB evidence.
 
 The active mode ("ollama:<model>" or "deterministic-fallback") is surfaced in the
 UI Trust/Audit panels so the degradation is visible, not hidden.
