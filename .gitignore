@@ -5,3 +5,14 @@ venv/
 .streamlit/secrets.toml
 *.duckdb
 .DS_Store
+
+# Presentation / document binaries are delivered separately, never committed
+# (override with `git add -f <file>` only when explicitly intended).
+*.pptx
+*.ppt
+*.key
+*.odp
+*.docx
+*.doc
+*.pdf
+presentation/
