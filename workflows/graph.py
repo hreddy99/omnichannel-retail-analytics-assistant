@@ -54,6 +54,8 @@ class WState(TypedDict, total=False):
     review: dict | None
     sync: dict
     gate_message: str
+    inject_tie: bool
+    tie: dict | None
 
 
 def _step(state: WState, node: str, detail: str, ok: bool = True):
@@ -404,7 +406,8 @@ def n_critic(state: WState) -> dict:
                                   + (" Evidence gated by structural check." if b.evidence_gated else ""))
         branches.append(b)
 
-    branches.sort(key=lambda x: (x.total, abs(x.signal)), reverse=True)
+    # Deterministic ranking: score, then the documented 5-step tie-break sequence.
+    branches.sort(key=lambda x: (x.total, tot.tie_break_key(x)), reverse=True)
     pruned = [b for b in branches if b.confidence == "pruned"]
     qualified = [b for b in branches if b.confidence != "pruned"]
     # Beam ranks PRIMARY conversion drivers; corroborating signals are kept aside.
@@ -412,6 +415,43 @@ def n_critic(state: WState) -> dict:
     depth = state.get("depth", tot.DEPTH_LIMIT)
     primary = [b for b in qualified if b.driver in PRIMARY_DRIVERS_SET]
     corroborating = [b for b in qualified if b.driver in CORROBORATING_SET]
+
+    # ---- deterministic tie-break among competing primary drivers ----------
+    # Demo: force the top two primary drivers into an equal-strength tie so the
+    # tie-break sequence and its escalation can be demonstrated reliably.
+    if state.get("inject_tie") and len(primary) >= 2:
+        strong, other = primary[0], primary[1]
+        other.scores = dict(strong.scores); other.total = strong.total
+        other.signal = strong.signal
+        strong.confidence = other.confidence = guardrails.evidence_gate(strong.total)
+        _step(state, "demo · inject tie", f"Forced an equal-strength tie between "
+              f"'{strong.label}' and '{other.label}' to exercise the tie-break sequence.")
+    elif state.get("inject_tie"):
+        _step(state, "demo · inject tie", "Tie injection skipped — fewer than two "
+              "qualified primary drivers to contend.")
+
+    tie = None
+    if (len(primary) >= 2 and primary[0].total >= guardrails.LIKELY_AT
+            and primary[1].total >= guardrails.LIKELY_AT
+            and tot.is_unresolved_tie(primary[0], primary[1])):
+        b0, b1 = primary[0], primary[1]
+        for crit in tot.TIE_BREAK_CRITERIA:
+            _step(state, "tie-break", f"{crit}: equal for '{b0.label}' and '{b1.label}'.")
+        b0.confidence = b1.confidence = "possible contributor"
+        b0.tied = b1.tied = True
+        tie = {"drivers": [b0.label, b1.label], "owners": [b0.owner, b1.owner],
+               "criteria": list(tot.TIE_BREAK_CRITERIA),
+               "note": (f"{b0.label} and {b1.label} are equally supported; the "
+                        "deterministic tie-break could not separate them, so both are "
+                        "labeled possible contributors and routed to analyst review.")}
+        a.event(workflow_node="critic", decision_type="tie_unresolved",
+                tool_name="Critic/Evaluator", input_summary=f"{b0.driver} vs {b1.driver}",
+                output_summary="tie-break exhausted; both -> possible contributor",
+                score_or_confidence="unresolved", status="caveated",
+                user_visible_note=f"Tie unresolved between {b0.label} and {b1.label}; action "
+                                  f"path: review {b0.owner} and {b1.owner} findings before action.")
+        _step(state, "tie-break · unresolved", tie["note"], ok=False)
+
     beam = primary[:bw]
     deferred = primary[bw:]
     depth2 = ([{"driver": b.driver, "sub_drivers": b.sub_drivers,
@@ -432,7 +472,7 @@ def n_critic(state: WState) -> dict:
     else:
         _step(state, "depth-1 only", "ToT depth=1 — sub-driver refinement skipped.")
     return {"branches": branches, "beam": beam, "deferred": deferred, "pruned": pruned,
-            "corroborating": corroborating, "depth2": depth2, "degraded": degraded}
+            "corroborating": corroborating, "depth2": depth2, "degraded": degraded, "tie": tie}
 
 
 def n_evidence_gate(state: WState) -> dict:
@@ -480,6 +520,12 @@ def n_human_review(state: WState) -> dict:
         reasons.append(f"{len(degraded)} analyst(s) failed/timed out and were excluded — "
                        "evidence is partial and needs confirmation")
         risk = max_risk(risk, "medium")
+    tie = state.get("tie")
+    if tie:
+        reasons.append(f"two competing drivers of equal strength ({' and '.join(tie['drivers'])}) "
+                       "could not be separated by the tie-break — labeled possible contributors "
+                       "pending analyst review")
+        risk = max_risk(risk, "high")
     # Every recommendation is business-impacting: it always routes to an owner for
     # a human-reviewed decision rather than an automatic system change.
     reasons.append("recommended actions are business-impacting and require owner review before execution")
@@ -493,8 +539,14 @@ def n_human_review(state: WState) -> dict:
     else:
         top = (likely or beam or deferred)
     impacted_owner = top[0].owner if top else "Analytics"
-    recommended_action = grounded_action(top[0].driver) if top else \
-        "Escalate as needs-analyst-review with recommended next checks."
+    if tie:
+        impacted_owner = " / ".join(dict.fromkeys(tie["owners"]))
+        recommended_action = (f"Review the {tie['drivers'][0]} and {tie['drivers'][1]} findings "
+                              f"with {impacted_owner} and decide before any business action — "
+                              "the tie-break could not pick a single driver.")
+    else:
+        recommended_action = grounded_action(top[0].driver) if top else \
+            "Escalate as needs-analyst-review with recommended next checks."
     review = a.create_review_request(
         reason="; ".join(reasons), risk_level=risk, impacted_owner=impacted_owner,
         recommended_action=recommended_action,
@@ -542,6 +594,11 @@ def n_synthesize(state: WState) -> dict:
     for b in ordered:
         pri = pri_map.get(id(b), "medium")
         action = RECOMMENDATIONS.get(b.driver, "Investigate and confirm with the owner before acting.")
+        if getattr(b, "tied", False):
+            # Unresolved tie: surface the owner/action path as a needs-review item.
+            pri = "needs review"
+            action = (f"Tie unresolved — route the {b.label} finding to {b.owner} for analyst "
+                      "review alongside the competing driver before any business action.")
         a.action(owner=b.owner, issue=b.label, evidence=b.finding, confidence=b.confidence,
                  priority=pri, next_step=action)
         recos.append({"owner": b.owner, "action": action, "priority": pri,
@@ -604,6 +661,15 @@ def n_synthesize(state: WState) -> dict:
                     f"({bl['target']:.2%} vs {bl['baseline']:.2%} prior-7-day average).")
         facts = (f"{ctx}. Likely drivers: "
                  + "; ".join(f"{d['label']} ({d['confidence']})" for d in drivers) + ".")
+
+    tie = state.get("tie")
+    if tie:
+        headline = (f"Two competing drivers are equally supported for the conversion drop — "
+                    f"{tie['drivers'][0]} and {tie['drivers'][1]}.")
+        facts = (f"{ctx}. The deterministic tie-break (evidence → freshness → caveats → "
+                 f"owner/action → graph alignment) could not separate {tie['drivers'][0]} and "
+                 f"{tie['drivers'][1]}, so both are labeled possible contributors and routed to "
+                 f"analyst review ({' / '.join(dict.fromkeys(tie['owners']))}) before any action.")
 
     summary = llm.draft_answer(state["question"], facts, conf)
     defn = catalog.get_metric("digital_conversion_rate")["definition"].strip()
@@ -692,6 +758,7 @@ def n_synthesize(state: WState) -> dict:
         "llm_mode": llm.mode(),
         "exec_summary": exec_summary,
         "review": state.get("review"),
+        "tie": state.get("tie"),
     }
     a.event(workflow_node="synthesize", decision_type="final_answer_ready", tool_name="Synthesis+LLM",
             output_summary=headline[:70], score_or_confidence=conf,

@@ -266,6 +266,14 @@ def _tab_business(t):
     if intent not in (None, "overall") and a.get("conversion_context"):
         st.caption("Context: " + a["conversion_context"])
 
+    tie = a.get("tie")
+    if tie:
+        st.warning(f"⚖️ **Tie unresolved — {tie['drivers'][0]} and {tie['drivers'][1]} are equally "
+                   "supported.** The deterministic tie-break (evidence → freshness → caveats → "
+                   "owner/action → graph alignment) could not separate them, so **both are labeled "
+                   f"*possible contributors*** and routed to analyst review "
+                   f"({' / '.join(dict.fromkeys(tie['owners']))}) before any business action.")
+
     rv = a.get("review")
     if rv:
         icon = "🔴" if rv["risk_level"] == "high" else "🟠" if rv["risk_level"] == "medium" else "🟢"
@@ -436,6 +444,16 @@ def _tab_tot(t):
     if not t["tot_activated"]:
         st.info("ToT not activated for this question (single obvious path).")
         return
+    tie = t.get("tie")
+    if tie:
+        steps = "".join(f"<li>{c}: <b>equal</b></li>" for c in tie["criteria"])
+        st.markdown(
+            f"<div style='border-left:5px solid #d97706;padding:8px 14px;margin:6px 0;"
+            f"background:#fffbeb;border-radius:4px'>⚖️ <b>Tie-break applied — "
+            f"{tie['drivers'][0]} vs {tie['drivers'][1]}</b><ol style='margin:6px 0 6px 18px;"
+            f"font-size:0.9em'>{steps}</ol><span style='font-size:0.9em'>Sequence exhausted → "
+            f"both labeled <b>possible contributors</b> and routed to analyst review "
+            f"({' / '.join(dict.fromkeys(tie['owners']))}).</span></div>", unsafe_allow_html=True)
     st.markdown(f"**Primary-driver beam (kept top {len(t['beam'])}):**")
     for b in t["beam"]:
         _scorecard(b)
@@ -492,6 +510,10 @@ def _tab_audit(t):
 
 def _tab_actions(t):
     st.caption("Action log — human-reviewed recommendations only; no operational writes")
+    tie = t.get("tie")
+    if tie:
+        st.info(f"⚖️ Tie unresolved — both {tie['drivers'][0]} and {tie['drivers'][1]} are routed "
+                "to their owners for analyst review (see the *needs review* rows below).")
     actions = t["audit"].actions
     if actions:
         show_df(pd.DataFrame(actions))
@@ -547,12 +569,19 @@ def page_demo():
 
     options = (["— Conversion-drop investigation —"] + P.DEMO_QUESTIONS
                + ["— Executive briefings (multi-agent, cross-functional) —"] + P.BRIEFING_QUESTIONS
+               + ["— Edge-case scenarios —", P.TIE_SCENARIO_QUESTION]
                + ["— Direct analytics questions —"] + insights.questions()
                + ["— Themed reviews (health / trend / risk) —"] + themes.questions()
                + ["✍️ Custom question…"])
     choice = st.selectbox("Pick a demo question", options, index=1)
     if choice.startswith("—"):  # a group separator was selected
         choice = P.DEMO_QUESTIONS[0]
+    # Tie scenario: run the full conversion investigation with an equal-strength tie forced.
+    scenario_tie = (choice == P.TIE_SCENARIO_QUESTION)
+    if scenario_tie:
+        st.caption("⚖️ Scenario: forces two equally-supported drivers so the deterministic "
+                   "tie-break runs — when it can't separate them, both are labeled possible "
+                   "contributors and routed to analyst review.")
     question = st.text_input("Question", value="" if choice.startswith("✍️") else choice)
     fail_opts = {"(none)": None, "Marketing Analyst": "campaign_mix",
                  "Merchandising Analyst": "inventory_availability",
@@ -576,10 +605,12 @@ def page_demo():
     if not question.strip():
         st.warning("Enter a question first.")
         return
+    # The tie scenario runs the full conversion investigation with an injected tie.
+    run_question = P.DEMO_QUESTIONS[0] if scenario_tie else question
     with st.status("Running investigation…", expanded=False) as status:
         t = None
         for kind, payload in run_investigation_stream(
-                question, inject_failure=fail_opts[fail_label],
+                run_question, inject_failure=fail_opts[fail_label], inject_tie=scenario_tie,
                 top_k=top_k, beam_width=beam_width, depth=depth):
             if kind == "step":
                 # Show only the CURRENT step as it progresses (single updating line).

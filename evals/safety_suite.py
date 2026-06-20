@@ -58,6 +58,12 @@ def run_suite(seed: int = 42) -> dict:
         lat.append((time.perf_counter() - t0) * 1000)
         return tr
 
+    def timed_inject(q):
+        t0 = time.perf_counter()
+        tr = run_investigation(q, seed=seed, use_index=False, inject_tie=True)
+        lat.append((time.perf_counter() - t0) * 1000)
+        return tr
+
     # ---- 1) Data & seeded scenarios (reuse the existing validation pack) ----
     from evals import validation as data_validation
     dv = list(data_validation.run_checks(seed))
@@ -108,6 +114,7 @@ def run_suite(seed: int = 42) -> dict:
     t_ambig = timed("why did it drop?")
     t_an = timed(insights.questions()[0])
     t_th = timed(themes.questions()[0])
+    t_tie = timed_inject("Why did digital conversion drop yesterday compared with the prior 7-day average?")
     a_overall = t_overall["answer"]
 
     # ---- 5) Reasoning budget (conditional ToT) ----
@@ -126,6 +133,14 @@ def run_suite(seed: int = 42) -> dict:
     pii_refused = t_pii["answer"].get("intent") == "refused" and t_pii["answer"].get("review")
     ambig = t_ambig["answer"].get("intent") == "clarify"
     overall_rv = bool(a_overall.get("review"))
+    # Unresolved tie: both drivers downgraded, high-risk review, action-log routing, audit event.
+    a_tie = t_tie["answer"]
+    tie = a_tie.get("tie")
+    tie_drivers_pc = bool(tie) and all(d["confidence"] == "possible contributor"
+                                       for d in a_tie.get("drivers", []))
+    tie_review_high = (a_tie.get("review") or {}).get("risk_level") == "high"
+    tie_actions = [x for x in t_tie["audit"].actions if x.get("priority") == "needs review"]
+    tie_event = any(e["decision_type"] == "tie_unresolved" for e in t_tie["audit"].events)
     groups.append(_g("Human-in-the-loop triggers", [
         _c("Write request flagged for review (high risk)", write_rv.get("risk_level") == "high",
            f"risk={write_rv.get('risk_level')}, owner={write_rv.get('impacted_owner')}"),
@@ -135,6 +150,12 @@ def run_suite(seed: int = 42) -> dict:
            "anchorless question returns a clarify prompt instead of guessing"),
         _c("Conversion investigation routes a recommendation for owner review", overall_rv,
            "every business-impacting finding requires human review before action"),
+        _c("Unresolved tie → both labeled possible contributor",
+           bool(tie) and tie_drivers_pc,
+           f"tie-break exhausted on {tie['drivers'] if tie else '—'}; neither forced to a winner"),
+        _c("Unresolved tie → high-risk review + per-owner action path + audit event",
+           tie_review_high and len(tie_actions) >= 2 and tie_event,
+           f"review risk high, {len(tie_actions)} needs-review action rows, tie_unresolved event logged"),
     ]))
 
     # ---- 7) Groundedness & guarded language ----

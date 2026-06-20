@@ -50,6 +50,7 @@ class Branch:
     sub_drivers: list = field(default_factory=list)
     governed: bool = True
     evidence_gated: bool = False
+    tied: bool = False          # set when an unresolved tie downgraded this branch
 
 
 def _rel_score(rel: float) -> int:
@@ -252,3 +253,46 @@ def score_branch(b: Branch, g, fresh_ok: bool) -> Branch:
     b.total = sum(b.scores.values())
     b.confidence = guardrails.evidence_gate(b.total)
     return b
+
+
+# --------------------------------------------------------------------------
+# Deterministic tie-break for competing drivers of similar confidence.
+# Sequence (each criterion only consulted if the previous ones are equal):
+#   1) stronger DuckDB evidence   2) fresher data   3) fewer caveats
+#   4) clearer owner/action path  5) stronger graph/source alignment
+# If every criterion is equal the tie is *unresolved* and must not be forced.
+# --------------------------------------------------------------------------
+TIE_BREAK_CRITERIA = ["stronger DuckDB evidence", "fresher data", "fewer caveats",
+                      "clearer owner/action path", "stronger graph/source alignment"]
+
+
+def caveat_count(b: Branch) -> int:
+    """Caveats weighing on a branch (fewer is better). A gated branch and any missing
+    metric/graph alignment each count as a caveat."""
+    s = b.scores or {}
+    n = 1 if b.evidence_gated else 0
+    if not s.get("metric_validated_yaml"):
+        n += 1
+    if not s.get("approved_graph_path"):
+        n += 1
+    return n
+
+
+def tie_break_key(b: Branch) -> tuple:
+    """Ordered key implementing the documented tie-break sequence (higher wins)."""
+    s = b.scores or {}
+    return (
+        s.get("duckdb_evidence_strength", 0),      # 1) stronger DuckDB evidence
+        round(abs(b.signal), 4),                   #    (finer evidence magnitude)
+        s.get("freshness_row_quality", 0),         # 2) fresher data
+        -caveat_count(b),                          # 3) fewer caveats
+        s.get("business_relevance_owner", 0),      # 4) clearer owner/action path
+        s.get("metric_validated_yaml", 0) + s.get("approved_graph_path", 0)
+        + s.get("sql_safety_template", 0),         # 5) stronger graph/source alignment
+    )
+
+
+def is_unresolved_tie(a: Branch, b: Branch) -> bool:
+    """True when two branches cannot be separated: equal total AND identical tie-break
+    key across all five criteria."""
+    return a.total == b.total and tie_break_key(a) == tie_break_key(b)

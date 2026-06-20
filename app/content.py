@@ -248,6 +248,12 @@ BRIEFING_QUESTIONS = [
     "Brief leadership on where to focus across marketing, merchandising, fulfillment, and service.",
 ]
 
+# Edge-case scenario: two drivers come back equally supported. Selecting this runs the
+# full conversion investigation with an equal-strength tie forced between the top two
+# drivers, so the deterministic tie-break sequence and its escalation are demonstrated.
+TIE_SCENARIO_QUESTION = ("Two competing drivers look equally responsible for yesterday's "
+                         "conversion drop — which is the real driver?")
+
 
 # This prototype's status vs the plan (component, status, note)
 PROTOTYPE_STATUS = [
