@@ -21,13 +21,13 @@ from workflows.graph import get_app
 __all__ = ["run_investigation", "run_investigation_stream", "BEAM_WIDTH", "QUERY_BUDGET"]
 
 
-def _setup(question, seed, use_index, inject_failure, top_k, beam_width, depth):
+def _setup(question, seed, use_index, inject_failure, top_k, beam_width, depth, inject_tie):
     con = build_duckdb(seed)
     audit = AuditLog()
     state = {"question": question, "con": con, "g": graph.build_graph(),
              "meta": get_meta(seed), "audit": audit,
              "index": retrieval.get_index() if use_index else None,
-             "inject_failure": inject_failure,
+             "inject_failure": inject_failure, "inject_tie": inject_tie,
              "top_k": top_k, "beam_width": beam_width, "depth": depth}
     return con, audit, state
 
@@ -51,6 +51,7 @@ def _trace(result: dict, audit: AuditLog, question: str) -> dict:
         "queries_used": result.get("queries_used", 0),
         "answer": result.get("answer", {}),
         "refusal": result.get("refusal"),
+        "tie": result.get("tie"),
         "audit": audit,
         "catalog_version": catalog.version(),
         "catalog_hash": catalog.content_hash(),
@@ -59,13 +60,15 @@ def _trace(result: dict, audit: AuditLog, question: str) -> dict:
 
 def run_investigation(question: str, seed: int = 42, use_index: bool = True,
                       inject_failure: str | None = None, top_k: int = 5,
-                      beam_width: int = 2, depth: int = 2) -> dict:
+                      beam_width: int = 2, depth: int = 2, inject_tie: bool = False) -> dict:
     """Execute the full governed multi-agent workflow and return a structured trace.
 
     The app runs unified: the full specialized analyst team is dispatched every time.
     top_k / beam_width / depth are tunable to explore their impact on the answer.
+    inject_tie forces an equal-strength tie between the top two drivers (demo only).
     """
-    con, audit, state = _setup(question, seed, use_index, inject_failure, top_k, beam_width, depth)
+    con, audit, state = _setup(question, seed, use_index, inject_failure, top_k,
+                               beam_width, depth, inject_tie)
     result = get_app().invoke(state)
     con.close()
     return _trace(result, audit, question)
@@ -73,7 +76,7 @@ def run_investigation(question: str, seed: int = 42, use_index: bool = True,
 
 def run_investigation_stream(question: str, seed: int = 42, use_index: bool = True,
                              inject_failure: str | None = None, top_k: int = 5,
-                             beam_width: int = 2, depth: int = 2):
+                             beam_width: int = 2, depth: int = 2, inject_tie: bool = False):
     """Generator yielding ('step', step_dict) as the workflow executes each node,
     then ('done', trace). Lets the UI show actual executing steps live, including
     the (potentially slow, one-time) setup so progress is visible immediately."""
@@ -92,6 +95,7 @@ def run_investigation_stream(question: str, seed: int = 42, use_index: bool = Tr
 
     state = {"question": question, "con": con, "g": g, "meta": get_meta(seed),
              "audit": audit, "index": index, "inject_failure": inject_failure,
+             "inject_tie": inject_tie,
              "top_k": top_k, "beam_width": beam_width, "depth": depth}
     result: dict = {}
     seen = 0
