@@ -554,6 +554,28 @@ def _tab_team(t):
         _table(P.MULTI_AGENT_TRADEOFFS, ["Trade-off accepted", "Mitigation"])
 
 
+def _params_effect_caption(t, top_k, beam_width, depth):
+    """Show the active reasoning parameters AND what they actually did this run, so the
+    knobs feel consequential (top-k → Trust details, beam → answer, depth → ToT trace)."""
+    intent = t["answer"].get("intent")
+    if intent not in ("overall", "driver", "briefing", "actions", "trust", "caveats"):
+        st.caption("⚙️ Reasoning parameters apply to the conversion investigation — this question "
+                   "took a different path, so the beam/depth knobs weren't exercised.")
+        return
+    beam = t.get("beam", [])
+    deferred = t.get("deferred", [])
+    n_qualified = len(beam) + len(deferred)
+    n_likely = sum(1 for b in beam if getattr(b, "confidence", "") == "likely driver")
+    parts = [
+        f"**top-k {top_k}** → {len(t.get('retrieval', []))} context chunk(s) retrieved (see *Trust details*)",
+        f"**beam {beam_width}** → kept {len(beam)} of {n_qualified} qualified primary driver(s), "
+        f"{n_likely} likely (drivers list + review risk)",
+        f"**depth {depth}** → {len(t.get('depth2', []))} sub-driver refinement(s), "
+        f"{'on' if depth >= 2 else 'off'} (see *ToT trace*)",
+    ]
+    st.caption("⚙️ Reasoning parameters (this run): " + "  ·  ".join(parts))
+
+
 def page_demo():
     st.title("🔬 Run Analysis — Governed Multi-Agent Investigation")
     st.write("Runs the real LangGraph pipeline on synthetic data. A team of specialized "
@@ -582,14 +604,17 @@ def page_demo():
                  "Merchandising Analyst": "inventory_availability",
                  "Fulfillment Analyst": "fulfillment_constraints",
                  "Customer Service Analyst": "service_signal"}
-    st.markdown("**Reasoning parameters** — tune these to see their impact on the answer:")
+    st.markdown("**Reasoning parameters** — tune these to see their impact on the investigation "
+                "(the answer, the ToT trace, and Trust details):")
     p1, p2, p3 = st.columns(3)
     top_k = p1.selectbox("Retrieval top-k", [3, 5, 8, 10], index=1,
-                         help="How many governed context chunks ChromaDB retrieves for grounding.")
+                         help="How many governed context chunks are retrieved — shown in Trust details.")
     beam_width = p2.selectbox("ToT beam width", [1, 2, 3, 4], index=1,
-                              help="How many primary conversion drivers the beam keeps as likely drivers.")
+                              help="How many primary drivers are kept as likely drivers — changes the "
+                                   "drivers list in the answer and the human-review risk.")
     depth = p3.selectbox("ToT depth", [1, 2], index=1,
-                         help="Depth 2 adds sub-driver refinement; depth 1 stops at driver selection.")
+                         help="Depth 2 adds sub-driver refinement — shown in the ToT trace; "
+                              "depth 1 stops at driver selection.")
     with st.expander("Advanced — resilience demo (optional)"):
         fail_label = st.selectbox("Simulate an agent failure (shows graceful degradation)",
                                   list(fail_opts), index=0)
@@ -616,6 +641,7 @@ def page_demo():
         status.update(label="Investigation complete", state="complete", expanded=False)
     if t.get("refusal"):
         st.error("🛡️ **Guardrail (read-only):** " + t["refusal"])
+    _params_effect_caption(t, top_k, beam_width, depth)
     tabs = st.tabs(["💬 Business answer", "👥 Multi-agent team", "📊 Evidence", "🔎 Trust details",
                     "🌳 ToT trace", "🧭 Technical audit", "📋 Action log"])
     with tabs[0]:

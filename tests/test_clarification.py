@@ -34,3 +34,25 @@ def test_governed_question_proceeds():
         "Why did digital conversion drop yesterday compared with the prior 7-day average?",
         use_index=False)
     assert t["answer"]["intent"] == "overall"
+
+
+def test_out_of_scope_question_is_not_a_conversion_dump():
+    t = run_investigation("give me year over year order count", use_index=False)
+    a = t["answer"]
+    assert a["intent"] == "unsupported"
+    assert not a.get("drivers") and not a.get("metrics") and a.get("table") is None
+    assert a.get("review") is None
+    assert "Digital conversion fell" not in a.get("headline", "")
+
+
+def test_conversion_synonyms_route_to_overall():
+    # broader synonyms: a decline framing about purchases still hits the flagship
+    for q in ["why did sales drop yesterday", "why are fewer people buying?",
+              "why are orders down vs last week"]:
+        assert run_investigation(q, use_index=False)["answer"]["intent"] == "overall"
+
+
+def test_listing_request_without_decline_is_out_of_scope():
+    # a purchase noun without a decline framing is NOT a conversion question
+    assert run_investigation("show me total order count", use_index=False)["answer"]["intent"] \
+        == "unsupported"

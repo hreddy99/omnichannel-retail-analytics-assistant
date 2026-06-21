@@ -119,6 +119,7 @@ _INTENT_LABEL = {
     "overall": "overall conversion drop",
     "refused": "refused — sensitive input outside synthetic scope",
     "clarify": "clarification needed (ambiguous question)",
+    "unsupported": "out of governed scope",
 }
 # Cross-business questions that should fan out the whole analyst team and return a
 # ranked, owner-routed executive briefing (NOT the single conversion-drop narrative).
@@ -158,7 +159,16 @@ def classify_intent(question: str):
     for key, pat in _FOCUS_PATTERNS:
         if re.search(pat, q):
             return "driver", key
-    return "overall", None
+    # Reserve the conversion investigation for conversion-style questions: an explicit
+    # conversion mention, or a decline framing about purchases (e.g. "why did sales drop").
+    # Everything else is out of governed scope rather than a default conversion run.
+    has_conv = re.search(r"conversion|convert", q)
+    has_purchase = re.search(r"purchas\w*|buy\w*|sales?\b|orders?\b|checkout|carts?\b", q)
+    has_decline = re.search(r"drop\w*|fell|fall\w*|declin\w*|down|lower|fewer|less|worse|"
+                            r"soft\w*|slump\w*|tank\w*|sink\w*|weak\w*", q)
+    if has_conv or (has_purchase and has_decline):
+        return "overall", None
+    return "unsupported", None
 
 
 # --------------------------------------------------------------------------
@@ -201,21 +211,32 @@ def n_classify(state: WState) -> dict:
               "a multi-signal investigation, not the conversion-drop path.")
         return {"refusal": refusal, "queries_used": 0, "intent": "themed", "focus": theme_id}
     intent, focus = classify_intent(state["question"])
-    # Ambiguity check: an anchorless question would otherwise default to
-    # the conversion narrative; instead ask one clarifying question first. A detected
-    # write request has a clear operational intent, so it flows through to the read-only
-    # refusal + human review rather than being treated as ambiguous.
-    if intent == "overall" and not refusal:
-        clarify = inputs.needs_clarification(state["question"])
-        if clarify:
-            a.event(workflow_node="input_gate", decision_type="clarification_requested",
+    # A question that maps to no governed metric/scenario must NOT default to the
+    # conversion investigation. A write request keeps its read-only-refusal flow;
+    # an anchorless/vague question asks for one clarification; anything else is
+    # answered as out of governed scope (no conversion data).
+    if intent == "unsupported":
+        if refusal:
+            intent = "overall"  # write request: keep read-only refusal + investigation
+        else:
+            clarify = inputs.needs_clarification(state["question"])
+            if clarify:
+                a.event(workflow_node="input_gate", decision_type="clarification_requested",
+                        tool_name="LangGraph", input_summary=state["question"][:80],
+                        output_summary="ambiguous question — no governed anchor term",
+                        status="caveated", user_visible_note="Asked the user to clarify the metric/area.")
+                _step(state, "input gate", "Question is ambiguous — asking for one clarification "
+                      "before investigating (deferring to the user rather than guessing).")
+                return {"refusal": refusal, "queries_used": 0, "intent": "clarify",
+                        "gate_message": clarify}
+            a.event(workflow_node="input_gate", decision_type="out_of_scope",
                     tool_name="LangGraph", input_summary=state["question"][:80],
-                    output_summary="ambiguous question — no governed anchor term",
-                    status="caveated", user_visible_note="Asked the user to clarify the metric/area.")
-            _step(state, "input gate", "Question is ambiguous — asking for one clarification "
-                  "before investigating (deferring to the user rather than guessing).")
-            return {"refusal": refusal, "queries_used": 0, "intent": "clarify",
-                    "gate_message": clarify}
+                    output_summary="no governed metric/scenario matched",
+                    status="caveated", user_visible_note="Classified as out of governed scope.")
+            _step(state, "input gate", "Out of governed scope — not a supported metric or "
+                  "scenario; returning what the assistant can investigate (no conversion data).")
+            return {"refusal": refusal, "queries_used": 0, "intent": "unsupported",
+                    "gate_message": inputs.out_of_scope_message(state["question"])}
     focus_label = (catalog.get_driver(focus) or {}).get("label", focus) if focus else ""
     detail = _INTENT_LABEL.get(intent, intent) + (f" → {focus_label}" if focus else "")
     a.event(workflow_node="classify", decision_type="question_classified",
@@ -785,6 +806,10 @@ def n_gated(state: WState) -> dict:
             evidence_summary="Input matched a sensitive-data pattern; not analyzed.")
         caveats = ["No analysis was performed; the input was blocked at the scope gate.",
                    "This prototype is read-only over synthetic data; no PII is accepted."]
+    elif intent == "unsupported":
+        headline = "Out of scope — not a governed metric or scenario."
+        caveats = ["No analysis was performed; the question didn't map to a governed metric.",
+                   "Try one of the listed areas, or pick a demo question."]
     else:  # clarify
         headline = "A quick clarification will help me investigate accurately."
         caveats = ["No default metric was assumed; please confirm the area and time frame.",
@@ -895,8 +920,8 @@ def build_workflow():
     # Route: refused/clarify -> terminal gate; analytics/themed -> direct node;
     # otherwise the full conversion-drop investigation.
     def _route(s):
-        return {"analytics": "analytics", "themed": "themed",
-                "refused": "gated", "clarify": "gated"}.get(s.get("intent"), "sync_gate")
+        return {"analytics": "analytics", "themed": "themed", "refused": "gated",
+                "clarify": "gated", "unsupported": "gated"}.get(s.get("intent"), "sync_gate")
     sg.add_conditional_edges("classify", _route,
                              {"analytics": "analytics", "themed": "themed",
                               "gated": "gated", "sync_gate": "sync_gate"})
