@@ -42,7 +42,7 @@ The domain investigations are run by a **team of specialized AI agents** dispatc
 - **Trade-offs handled** — coordination overhead (bounded pool + per-agent
   timeout), complexity (one shared agent contract + governed catalog), and new
   failure modes (each agent isolated; a failure degrades to an excluded result and
-  the team continues). The Live Demo's "Simulate an agent failure" control shows
+  the team continues). The Run Analysis page's "Simulate an agent failure" control shows
   this graceful degradation live.
 
 The app runs **unified** — the full analyst team is dispatched on every
@@ -93,10 +93,10 @@ python -m evals.validation   # synthetic-data validation checks
 | 🏠 Overview | Executive summary, business roles, enterprise/medallion alignment, capability alignment, status |
 | 🏗️ Architecture | LangGraph flow, live NetworkX graph, YAML catalog, agent roster, conflict rules |
 | 📚 Data Catalog | The 18 governed tables, certified metrics, drivers, and the live knowledge graph |
-| 🔬 Live Demo | Runs the real pipeline; live step trace + multi-agent team + four trace levels |
+| 🔬 Run Analysis | Runs the real pipeline; live step trace + multi-agent team + four trace levels |
 | 🧪 Evaluation & Safety | Grouped pass/fail harness: data, adversarial SQL/PII block-rate, retrieval, knowledge graph, reasoning budget, human-in-the-loop, groundedness, calibration, audit completeness, latency, and routing |
 
-The **Live Demo** streams each executing step, then exposes seven tabs: Business
+The **Run Analysis** page streams each executing step, then exposes seven tabs: Business
 answer → Multi-agent team → Evidence → Trust details → ToT trace → Technical audit
 → Action log. The question picker covers the flagship conversion investigation, three
 cross-functional **executive briefings** (multi-agent), 15 direct analytics questions,
@@ -147,7 +147,7 @@ requirements.txt       Free/local dependencies
 .env.example           Optional local LLM (Ollama) configuration template
 
 app/                   Streamlit UI
-  main.py              Streamlit app (5 pages, multi-tab Live Demo)
+  main.py              Streamlit app (5 pages, multi-tab Run Analysis)
   content.py           Structured product content for the pages
   diagrams.py          Graphviz DOT diagrams rendered in-app
 agents/                Multi-agent analyst team
