@@ -2,8 +2,8 @@
 Omnichannel Retail Analytics Assistant - Streamlit app.
 
 A runnable prototype of the governed investigation workflow (ReAct + RAG +
-Knowledge Graph + conditional ToT beam search). The Live Demo runs the real
-LangGraph pipeline and exposes four trace levels (business answer, evidence,
+Knowledge Graph + conditional ToT beam search). The Run Analysis page runs the
+real LangGraph pipeline and exposes four trace levels (business answer, evidence,
 trust details, and technical audit).
 
 Run:  streamlit run app/main.py
@@ -231,58 +231,53 @@ def _scorecard(b):
 
 
 def _driver_block(a):
-    """Render the cross-domain driver findings (used for the overall question and
-    inside an expander for focused questions)."""
-    st.markdown("**Likely drivers (selected by beam search):**")
+    """Plain-language drivers for the business answer (no scores or internal jargon;
+    the scored/technical view lives in the ToT trace tab)."""
+    st.markdown("**What's driving it:**")
     for d in a["drivers"]:
         c = CONF_COLOR.get(d["confidence"], "#16a34a")
         st.markdown(f"<div style='border-left:5px solid {c};padding:6px 12px;margin:5px 0;"
                     f"background:#f0fdf4;border-radius:4px'><b>{d['label']}</b> → <b>{d['owner']}</b> · "
-                    f"<span style='color:{c}'>{d['confidence']}</span> (score {d['score']}/14)<br>"
+                    f"<span style='color:{c}'>{d['confidence']}</span><br>"
                     f"<span style='font-size:0.9em;color:#475569'>{d['finding']}</span></div>",
                     unsafe_allow_html=True)
     if a["contributors"]:
-        st.markdown("**Possible contributors (outside the beam):**")
+        st.markdown("**Other possible factors:**")
         for d in a["contributors"]:
-            st.markdown(f"- **{d['label']}** → {d['owner']} (score {d['score']}/14) — {d['finding']}")
+            st.markdown(f"- **{d['label']}** → {d['owner']} — {d['finding']}")
     if a.get("corroborating"):
-        st.markdown("**Corroborating signals (secondary — not direct causes):**")
+        st.markdown("**Related signals (not direct causes):**")
         for d in a["corroborating"]:
             st.markdown(f"- **{d['label']}** → {d['owner']} — {d['finding']}")
-    if a["pruned"]:
-        st.markdown("**Pruned hypotheses:**")
-        for p in a["pruned"]:
-            st.markdown(f"- ~~{p['label']}~~ (score {p['score']}/14) — {p['reason']}")
 
 
 def _tab_business(t):
     a = t["answer"]; bl = t["baseline"]; intent = a.get("intent", "overall")
     st.markdown(f"### {a['headline']}")
-    st.caption("Level 1 · Business summary — for business users and leaders")
-    conf_c = "#16a34a" if a["confidence"] == "high" else "#d97706"
-    st.markdown(f"**Confidence:** <span style='color:{conf_c}'>{a['confidence']}</span>  ·  "
-                f"*drafting: {a.get('llm_mode')}*", unsafe_allow_html=True)
+    conf = (a.get("confidence") or "").strip()
+    if intent in ("overall", "driver", "briefing", "actions") and conf:
+        conf_c = "#16a34a" if conf == "high" else "#d97706"
+        st.markdown(f"**Confidence:** <span style='color:{conf_c}'>{conf.title()}</span>",
+                    unsafe_allow_html=True)
     st.write(a["summary"])
     if intent not in (None, "overall") and a.get("conversion_context"):
         st.caption("Context: " + a["conversion_context"])
 
     tie = a.get("tie")
     if tie:
-        st.warning(f"⚖️ **Tie unresolved — {tie['drivers'][0]} and {tie['drivers'][1]} are equally "
-                   "supported.** The deterministic tie-break (evidence → freshness → caveats → "
-                   "owner/action → graph alignment) could not separate them, so **both are labeled "
-                   f"*possible contributors*** and routed to analyst review "
-                   f"({' / '.join(dict.fromkeys(tie['owners']))}) before any business action.")
+        st.warning(f"⚖️ **{tie['drivers'][0]} and {tie['drivers'][1]} look equally responsible**, "
+                   "and the evidence can't separate them — so neither is called the single cause. "
+                   f"Both go to **{' / '.join(dict.fromkeys(tie['owners']))}** for a quick review "
+                   "before any action.")
 
     rv = a.get("review")
     if rv:
         icon = "🔴" if rv["risk_level"] == "high" else "🟠" if rv["risk_level"] == "medium" else "🟢"
-        st.warning(f"{icon} **Human review required ({rv['risk_level']} risk)** — routed to "
-                   f"**{rv['impacted_owner']}**. {rv['reason']}. Recommended (pending review): "
-                   f"{rv['recommended_action']}")
+        st.warning(f"{icon} **Needs a quick human sign-off before acting** — routed to "
+                   f"**{rv['impacted_owner']}**. Suggested next step: {rv['recommended_action']}")
 
     # Input/scope guardrail outcomes (no analysis was performed).
-    if intent in ("refused", "clarify"):
+    if intent in ("refused", "clarify", "unsupported"):
         (st.error if intent == "refused" else st.info)(a["summary"])
         for cv in a.get("caveats", []):
             st.caption("• " + cv)
@@ -298,7 +293,7 @@ def _tab_business(t):
         if fig is not None:
             st.plotly_chart(fig, width="stretch", key="biz_main_chart")
         if a.get("table") is not None:
-            st.markdown("**Result (read-only DuckDB query):**")
+            st.markdown("**Result:**")
             show_df(a["table"])
         st.info(f"**Owner:** {a.get('owner', '-')} · {a.get('recommendation', '')}")
         return
@@ -321,18 +316,17 @@ def _tab_business(t):
             label, c = _tag.get(i["priority"], ("Investigate", "#64748b"))
             st.markdown(f"<div style='border-left:5px solid {c};padding:6px 12px;margin:5px 0;"
                         f"background:#f8fafc;border-radius:4px'><b>{label}</b> · <b>{i['label']}</b> "
-                        f"→ <b>{i['owner']}</b> · <span style='color:{c}'>{i['confidence']}</span> "
-                        f"(score {i['score']}/14)<br><span style='font-size:0.9em;color:#475569'>"
+                        f"→ <b>{i['owner']}</b> · <span style='color:{c}'>{i['confidence']}</span>"
+                        f"<br><span style='font-size:0.9em;color:#475569'>"
                         f"{i['finding']}</span><br><span style='font-size:0.9em'>"
                         f"<b>Recommended:</b> {i['action']}</span></div>", unsafe_allow_html=True)
         st.info("**Recommendation:** " + a["recommendation"])
 
     elif intent == "overall":
-        m1, m2, m3, m4 = st.columns(4)
+        m1, m2, m3 = st.columns(3)
         m1.metric("Yesterday", f"{bl['target']:.2%}")
         m2.metric("Prior 7-day avg", f"{bl['baseline']:.2%}")
         m3.metric("Change", f"{bl['pct_change']:+.1%}")
-        m4.metric("Queries used", f"{t['queries_used']}/{QUERY_BUDGET}")
         _driver_block(a)
         st.info("**Recommendation:** " + a["recommendation"])
 
@@ -348,7 +342,7 @@ def _tab_business(t):
         if fig is not None:
             st.plotly_chart(fig, width="stretch", key="biz_focus_chart")
         if f.get("evidence") is not None:
-            st.markdown("**Evidence (read-only DuckDB):**")
+            st.markdown("**Evidence:**")
             show_df(f["evidence"])
         st.info(f"**Recommended action — {f['owner']}:** {f['action']}")
         with st.expander("See the full cross-domain investigation"):
@@ -378,7 +372,8 @@ def _tab_business(t):
         st.markdown(f"#### {es['title']}")
         for line in es["bullets"]:
             st.markdown(f"- {line}")
-        st.caption(es["note"])
+        st.caption("These are suggestions for the owning team to review — nothing is changed "
+                   "automatically.")
 
 
 def _tab_evidence(t):
@@ -560,7 +555,7 @@ def _tab_team(t):
 
 
 def page_demo():
-    st.title("🔬 Live Demo — Governed Multi-Agent Investigation")
+    st.title("🔬 Run Analysis — Governed Multi-Agent Investigation")
     st.write("Runs the real LangGraph pipeline on synthetic data. A team of specialized "
              "analysts is dispatched in parallel; results are exposed through four trace "
              "levels plus a multi-agent team view.")
@@ -782,21 +777,16 @@ def page_architecture():
 
 
 # The plan prescribes a focused 5-section UI:
-# Overview · Architecture · Data Catalog · Live Demo · Evaluation.
+# Overview · Architecture · Data Catalog · Run Analysis · Evaluation.
 PAGES = {
     "🏠 Overview": page_overview,
     "🏗️ Architecture": page_architecture,
     "📚 Data Catalog": page_catalog,
-    "🔬 Live Demo": page_demo,
+    "🔬 Run Analysis": page_demo,
     "🧪 Evaluation": page_evaluation,
 }
 
 st.sidebar.title("🛍️ Retail Analytics Assistant")
 st.sidebar.caption("Governed agentic analytics · modern data platform")
 selection = st.sidebar.radio("Navigate", list(PAGES.keys()))
-st.sidebar.divider()
-st.sidebar.markdown(f"**Catalog:** v{catalog.version()}  \n`{catalog.content_hash()}`  \n\n"
-                    "**Read-only** · Faker synthetic data · free/local stack")
-st.sidebar.caption("ReAct + RAG + Knowledge Graph + conditional ToT beam search. "
-                   "Ollama & sentence-transformers are optional with fallbacks.")
 PAGES[selection]()
