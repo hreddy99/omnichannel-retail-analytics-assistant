@@ -866,8 +866,8 @@ def n_analytics(state: WState) -> dict:
               "degraded": [], "caveats": ["Synthetic data with a fixed seed; illustrative magnitudes.",
                                           "Read-only analysis over governed tables."],
               "exec_summary": None, "focus": None,
-              "recommendation": f"{ins.owner}: {res['headline']} Review and prioritize "
-                                "accordingly (read-only analysis — no operational writes)."}
+              "recommendation": "Review and prioritize with the owning team "
+                                "(read-only analysis — no operational writes)."}
     a.event(workflow_node="synthesize", decision_type="final_answer_ready", tool_name="Synthesis",
             output_summary=res["headline"][:70], user_visible_note="Analytics answer assembled.")
     return {"answer": answer, "queries_used": 1}

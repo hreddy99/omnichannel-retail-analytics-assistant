@@ -11,6 +11,7 @@ Run:  streamlit run app/main.py
 from __future__ import annotations
 
 import pathlib
+import re
 import sys
 
 # Ensure the repository root is importable when launched via `streamlit run
@@ -259,7 +260,9 @@ def _tab_business(t):
         conf_c = "#16a34a" if conf == "high" else "#d97706"
         st.markdown(f"**Confidence:** <span style='color:{conf_c}'>{conf.title()}</span>",
                     unsafe_allow_html=True)
-    st.write(a["summary"])
+    # Gated intents render the message once in a styled box below — don't repeat it here.
+    if intent not in ("refused", "clarify", "unsupported"):
+        st.write(a["summary"])
     if intent not in (None, "overall") and a.get("conversion_context"):
         st.caption("Context: " + a["conversion_context"])
 
@@ -328,7 +331,6 @@ def _tab_business(t):
         m2.metric("Prior 7-day avg", f"{bl['baseline']:.2%}")
         m3.metric("Change", f"{bl['pct_change']:+.1%}")
         _driver_block(a)
-        st.info("**Recommendation:** " + a["recommendation"])
 
     elif intent == "driver" and a.get("focus"):
         f = a["focus"]
@@ -344,7 +346,6 @@ def _tab_business(t):
         if f.get("evidence") is not None:
             st.markdown("**Evidence:**")
             show_df(f["evidence"])
-        st.info(f"**Recommended action — {f['owner']}:** {f['action']}")
         with st.expander("See the full cross-domain investigation"):
             _driver_block(a)
 
@@ -367,11 +368,25 @@ def _tab_business(t):
         for cv in a["caveats"]:
             st.markdown(f"- {cv}")
 
+    # Executive summary = the single home for the owner-routed action plan. Other intents
+    # (briefing cards, actions table, caveats/trust blocks) already show this, so only
+    # render it for the conversion investigation to avoid repeating the same items.
     es = a.get("exec_summary")
-    if es:
+    if es and intent in ("overall", "driver"):
         st.markdown(f"#### {es['title']}")
+        # Color-code prioritized action items by their leading tag.
+        prio = [("Act now", "#dc2626", "#fef2f2"), ("Investigate next", "#d97706", "#fffbeb"),
+                ("Monitor", "#16a34a", "#f0fdf4"), ("Needs review", "#dc2626", "#fef2f2")]
         for line in es["bullets"]:
-            st.markdown(f"- {line}")
+            hit = next(((tag, col, bg) for tag, col, bg in prio if line.startswith(tag)), None)
+            if hit:
+                tag, col, bg = hit
+                body = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", line[len(tag):])
+                st.markdown(f"<div style='border-left:5px solid {col};background:{bg};"
+                            f"padding:6px 12px;margin:5px 0;border-radius:4px'>"
+                            f"<b style='color:{col}'>{tag}</b>{body}</div>", unsafe_allow_html=True)
+            else:
+                st.markdown(f"- {line}")
         st.caption("These are suggestions for the owning team to review — nothing is changed "
                    "automatically.")
 
