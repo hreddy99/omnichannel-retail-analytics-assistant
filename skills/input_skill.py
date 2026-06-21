@@ -94,3 +94,21 @@ def needs_clarification(question: str) -> str | None:
         return None
     # Very short, anchorless inputs ("why did it drop?", "what happened?", "help")
     return _CLARIFY_MSG
+
+
+# --- out-of-scope -------------------------------------------------------------
+_OUT_OF_SCOPE_MSG = (
+    "That isn't one of the governed metrics or scenarios this assistant can investigate "
+    "(for example, year-over-year comparisons need more than a year of history, which this "
+    "synthetic dataset doesn't have). I can investigate: why **digital conversion** dropped; "
+    "**channel / campaign** performance; **category & inventory** (stockouts, availability); "
+    "**fulfillment** delays; the **checkout funnel**; **customer-service** contacts; "
+    "**finance** gross-to-net reconciliation; **vendor** scorecards; and cross-functional "
+    "**executive briefings**. Please rephrase toward one of these, or pick a demo question."
+)
+
+
+def out_of_scope_message(question: str | None = None) -> str:
+    """Message for a question that doesn't map to any governed metric/scenario."""
+    return _OUT_OF_SCOPE_MSG
+
