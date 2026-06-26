@@ -1,0 +1,20 @@
+# Business rules. Required filters, comparison windows, and
+# baseline definitions used by SQL templates, validation, and final caveats.
+section_id: business_rules
+rules:
+  baseline_window:
+    description: "Baseline is the average over the 7 days prior to the target day."
+    target_day: "max(date) in the synthetic data ('yesterday')"
+    window_days: 7
+  order_status_filter:
+    description: "Only completed eligible orders count toward conversion."
+    filter: "fact_orders.order_status = 'completed'"
+  conversion_grain:
+    description: "Conversion is computed at day grain; do not mix grains."
+    grain: day
+  comparison_metrics:
+    description: "Evidence should report current, baseline, delta, percent change, contribution."
+    required: [current, baseline, delta, pct_change]
+  freshness_rule:
+    description: "Trust T-1 (yesterday); T-0 (today) may be incomplete."
+    trustworthy_day: "T-1"

@@ -1,0 +1,86 @@
+# Business drivers. Each driver is a candidate ToT branch
+# mapping a hypothesis to the metric/tables it interrogates and the owner that
+# would act on it. Used for graph nodes, ToT candidate generation, owner routing.
+section_id: drivers
+drivers:
+  campaign_mix:
+    label: "Campaign / channel mix shift"
+    domain: marketing
+    owner: "Marketing"
+    metric: paid_social_conversion
+    tables: [fact_sessions, dim_campaign]
+    system: "Campaign Platform"
+    sub_drivers: [paid_social_traffic_quality, campaign_share_spike]
+    hypothesis: "Traffic shifted toward lower-converting paid channels."
+  inventory_availability:
+    label: "Inventory availability"
+    domain: merchandising
+    owner: "Merchandising"
+    metric: stockout_rate
+    tables: [fact_inventory_daily, fact_sessions]
+    system: "ERP Inventory"
+    sub_drivers: [category_stockout, low_online_availability]
+    hypothesis: "High-view categories went out of stock, suppressing conversion."
+  fulfillment_constraints:
+    label: "Fulfillment constraints"
+    domain: fulfillment
+    owner: "Fulfillment Operations"
+    metric: fulfillment_delay_rate
+    tables: [fact_fulfillment]
+    system: "Fulfillment Platform"
+    sub_drivers: [delivery_promise_delay, reduced_options]
+    hypothesis: "Delivery delays or fewer options deterred checkout in some regions."
+  funnel_behavior:
+    label: "Funnel / on-site behavior"
+    domain: analytics
+    owner: "Digital Analytics"
+    metric: funnel_purchase_rate
+    tables: [fact_events]
+    system: "Ecommerce"
+    sub_drivers: [cart_abandonment, checkout_dropoff]
+    hypothesis: "On-site funnel defect reduced conversion independent of traffic."
+  service_signal:
+    label: "Service contact spike"
+    domain: service
+    owner: "Customer Service"
+    metric: service_contact_rate
+    tables: [fact_customer_contacts]
+    system: "Service Platform"
+    sub_drivers: [delivery_complaints, cancellation_contacts]
+    hypothesis: "Operational issues drove a rise in customer contacts."
+  finance_caveat:
+    label: "Finance caveat"
+    domain: finance
+    owner: "Finance"
+    metric: net_revenue_ratio
+    tables: [fact_finance_daily]
+    system: "Finance Reporting"
+    sub_drivers: [returns_timing, tax_shipping_adjustments]
+    hypothesis: "Net revenue differs from gross sales due to returns/tax/shipping."
+  vendor_insight:
+    label: "Vendor / category partner impact"
+    domain: merchandising
+    owner: "Merchandising"
+    metric: vendor_stockout_impact
+    tables: [fact_inventory_daily, dim_product, fact_order_items]
+    system: "ERP Inventory"
+    sub_drivers: [vendor_stockout, category_partner_alert]
+    hypothesis: "A vendor's stockouts in a high-sales category should trigger a partner alert."
+
+# Enterprise systems shown for context only (no real connections).
+systems:
+  - {name: "Ecommerce", domain: analytics}
+  - {name: "OMS", domain: analytics}
+  - {name: "ERP Inventory", domain: merchandising}
+  - {name: "Fulfillment Platform", domain: fulfillment}
+  - {name: "Campaign Platform", domain: marketing}
+  - {name: "Service Platform", domain: service}
+  - {name: "Finance Reporting", domain: finance}
+
+owners:
+  - {name: "Digital Analytics", domain: analytics}
+  - {name: "Marketing", domain: marketing}
+  - {name: "Merchandising", domain: merchandising}
+  - {name: "Fulfillment Operations", domain: fulfillment}
+  - {name: "Customer Service", domain: service}
+  - {name: "Finance", domain: finance}

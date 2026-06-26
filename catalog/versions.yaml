@@ -1,0 +1,15 @@
+# Catalog version manifest. The catalog sync/version gate
+# checks this version against ChromaDB chunk metadata and the NetworkX graph.
+# Per-file content_hash is computed at load time by skills/catalog_skill.py and compared
+# against retrieval/graph metadata; mismatch -> refresh/rebuild or block.
+section_id: versions
+catalog_version: "4.2.0"
+last_updated: "2026-06-08"
+approved_for_mvp: true
+files:
+  - metrics.yaml
+  - tables.yaml
+  - drivers.yaml
+  - business_rules.yaml
+  - guardrails.yaml
+  - examples.yaml

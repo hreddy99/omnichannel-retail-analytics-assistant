@@ -1,0 +1,15 @@
+[theme]
+primaryColor = "#2563eb"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f1f5f9"
+textColor = "#0f172a"
+font = "sans serif"
+# Larger default text so the app is readable at 100% zoom (Streamlit default is 16).
+baseFontSize = 18
+
+[server]
+headless = true
+runOnSave = true
+
+[browser]
+gatherUsageStats = false

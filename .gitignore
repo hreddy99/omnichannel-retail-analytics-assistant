@@ -1,0 +1,18 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.streamlit/secrets.toml
+*.duckdb
+.DS_Store
+
+
+# (override with `git add -f <file>` only when explicitly intended).
+*.pptx
+*.ppt
+*.key
+*.odp
+*.docx
+*.doc
+*.pdf
+presentation/

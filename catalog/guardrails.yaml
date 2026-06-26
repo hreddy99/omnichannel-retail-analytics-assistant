@@ -1,0 +1,28 @@
+# Guardrails. Consumed by guardrail functions and the
+# final response template. The LLM never decides source authority on its own.
+section_id: guardrails
+sql_safety:
+  select_only: true
+  forbidden_keywords: [insert, update, delete, drop, alter, create, truncate,
+                       replace, merge, grant, attach, copy, pragma]
+  approved_tables_only: true
+  single_statement: true
+source_priority:
+  order: ["YAML catalog", "DuckDB evidence", "ChromaDB retrieval", "NetworkX graph"]
+  rules:
+    - "YAML wins over any retrieved or graph relationship."
+    - "DuckDB evidence controls whether a retrieved hypothesis becomes a finding."
+    - "Stale ChromaDB chunk or graph version is rejected/rebuilt before use."
+    - "Prior notes are context only, never evidence."
+confidence_thresholds:
+  prune_below: 7
+  possible_contributor: [7, 9]
+  likely_driver_at: 10
+  max_score: 14
+causality_labels: [likely_driver, possible_contributor, hypothesis, inconclusive]
+unsupported_cause_language: >
+  Do not present unsupported root causes as facts. Use likely driver, possible
+  contributor, hypothesis, or inconclusive labels.
+write_protection:
+  description: "No writes to ERP, OMS, CRM, pricing, campaign, inventory, fulfillment, service, finance."
+  behavior: "Refuse write requests; convert to human-reviewed recommendation."

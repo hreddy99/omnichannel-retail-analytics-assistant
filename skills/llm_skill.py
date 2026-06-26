@@ -1,0 +1,128 @@
+"""
+Local LLM wrapper.
+
+Ollama is used for planning hints and response drafting. It is OPTIONAL: the
+client probes for a running Ollama daemon at import; if none is reachable (e.g.
+in a headless/cloud sandbox), the wrapper falls back to deterministic,
+template-based text so the governed workflow still runs end-to-end. The LLM is
+never a source of truth - all claims come from DuckDB evidence.
+
+The active mode ("ollama:<model>" or "deterministic-fallback") is surfaced in the
+UI Trust/Audit panels so the degradation is visible, not hidden.
+"""
+from __future__ import annotations
+
+import functools
+import os
+import pathlib
+import re
+
+# Default local model (overridable via OLLAMA_MODEL in .env / environment).
+DEFAULT_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
+# Smaller fallback for lower-memory machines; used if the default isn't pulled.
+FALLBACK_MODEL = os.getenv("OLLAMA_FALLBACK_MODEL", "qwen2.5:3b")
+# Keep the demo responsive: bound the request and cap generation so a slow local
+# model (e.g. a 7B model on CPU) can't stall the investigation - it falls back to
+# the deterministic template if it exceeds these limits.
+REQUEST_TIMEOUT_S = float(os.getenv("OLLAMA_TIMEOUT_S", "20"))
+MAX_TOKENS = int(os.getenv("OLLAMA_MAX_TOKENS", "200"))
+
+_PROMPTS_DIR = pathlib.Path(__file__).resolve().parent.parent / "prompts"
+
+
+@functools.lru_cache(maxsize=None)
+def _load_prompt(name: str) -> str:
+    """Load a structured prompt template from prompts/<name>.txt."""
+    return (_PROMPTS_DIR / f"{name}.txt").read_text(encoding="utf-8").strip()
+
+
+@functools.lru_cache(maxsize=1)
+def probe() -> dict:
+    """Return {available, mode, detail}. Cached for the process."""
+    try:
+        import ollama
+        models = ollama.Client(timeout=5).list().get("models", [])
+        names = [m.get("model") or m.get("name") for m in models]
+        # Prefer the default model; fall back to the smaller model; else first available.
+        if any(DEFAULT_MODEL in (n or "") for n in names):
+            model, note = DEFAULT_MODEL, f"using {DEFAULT_MODEL}"
+        elif any(FALLBACK_MODEL in (n or "") for n in names):
+            model, note = FALLBACK_MODEL, f"default {DEFAULT_MODEL} not pulled; using fallback {FALLBACK_MODEL}"
+        else:
+            model = names[0] if names else DEFAULT_MODEL
+            note = f"using {model}"
+        return {"available": True, "mode": f"ollama:{model}", "model": model,
+                "fallback": FALLBACK_MODEL,
+                "detail": f"Ollama daemon reachable; {note} (fallback {FALLBACK_MODEL})."}
+    except Exception as e:
+        return {"available": False, "mode": "deterministic-fallback", "model": None,
+                "detail": f"No Ollama daemon ({type(e).__name__}); using deterministic "
+                          "template fallback. Start `ollama serve` on your PC to enable."}
+
+
+def mode() -> str:
+    return probe()["mode"]
+
+
+_NUM_RE = re.compile(r"\$?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?%?")
+
+
+def _sanitize_draft(text: str) -> str:
+    """Strip markdown artifacts (code spans, fences, bold/italic, headings) that an LLM
+    may emit, since the UI renders these summaries as plain prose. Never alters numbers."""
+    text = text.replace("```", " ")
+    text = re.sub(r"[`*#_]+", "", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _preserves_facts(draft: str, facts: str) -> bool:
+    """True only if every number / currency / percentage token in `facts` survives the
+    draft verbatim, so the LLM can reword, but can't drop a $ or change a figure."""
+    return all(tok in draft for tok in _NUM_RE.findall(facts))
+
+
+def draft_answer(question: str, facts: str, confidence: str) -> str:
+    """Answer the user's QUESTION in 2 cautious sentences using only `facts`.
+    Uses Ollama if available (bounded by timeout + token cap), else returns the
+    deterministic facts string. This keeps the response tuned to what was asked."""
+    info = probe()
+    if info["available"]:
+        try:
+            import ollama
+            prompt = _load_prompt("draft_answer").format(
+                question=question, facts=facts, confidence=confidence)
+            resp = ollama.Client(timeout=REQUEST_TIMEOUT_S).chat(
+                model=info["model"], messages=[{"role": "user", "content": prompt}],
+                options={"num_predict": MAX_TOKENS})
+            draft = _sanitize_draft(resp["message"]["content"])
+            # Governed correctness: only accept the reworded draft if it preserved every
+            # figure exactly; otherwise fall back to the deterministic facts.
+            if draft and _preserves_facts(draft, facts):
+                return draft
+        except Exception:
+            pass
+    return facts
+
+
+def draft_summary(headline: str, drivers: list[dict], confidence: str) -> str:
+    """Draft the business-facing summary. Uses Ollama if available, else a
+    deterministic template (identical structure either way)."""
+    info = probe()
+    driver_lines = "; ".join(f"{d['label']} ({d['confidence']})" for d in drivers) or "no supported driver"
+    if info["available"]:
+        try:
+            import ollama
+            prompt = _load_prompt("draft_summary").format(
+                headline=headline, drivers=driver_lines, confidence=confidence)
+            resp = ollama.Client(timeout=REQUEST_TIMEOUT_S).chat(
+                model=info["model"], messages=[{"role": "user", "content": prompt}],
+                options={"num_predict": MAX_TOKENS})
+            draft = _sanitize_draft(resp["message"]["content"])
+            if draft and _preserves_facts(draft, headline):
+                return draft
+        except Exception:
+            pass  # slow/unavailable -> fall through to deterministic
+    # deterministic fallback
+    return (f"{headline} The evidence points to {driver_lines}. "
+            f"Overall confidence is {confidence}; findings are routed to their owners "
+            f"for human-reviewed follow-up rather than presented as proven root causes.")
