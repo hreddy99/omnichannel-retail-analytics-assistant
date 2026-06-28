@@ -41,6 +41,12 @@ st.markdown(
     <style>
       [data-testid="stMarkdownContainer"] p,
       [data-testid="stMarkdownContainer"] li { line-height: 1.6; }
+      /* Sidebar title: shrink slightly and never break inside a word so
+         "Omnichannel" doesn't wrap as "Omnichanne / l" in the narrow sidebar. */
+      section[data-testid="stSidebar"] h1 {
+        font-size: 1.4rem; line-height: 1.25;
+        word-break: normal; overflow-wrap: normal; hyphens: none;
+      }
     </style>
     """,
     unsafe_allow_html=True,
