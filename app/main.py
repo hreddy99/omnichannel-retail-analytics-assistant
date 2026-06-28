@@ -461,6 +461,10 @@ def _tab_trust(t):
 def _tab_tot(t):
     _shared_trace_note(t)
     st.caption("Level 3 · ToT trace: candidate branches, scores, pruning, selection")
+    st.caption(f"ℹ️ Query budget is a fixed structural cap ({t['queries_used']}/{QUERY_BUDGET}: "
+               "one baseline plus one query per analyst, dispatched in parallel), not an iterative "
+               "loop that can stall. Beam search scores evidence already collected and spends no "
+               "extra queries, so a complete answer is always produced within budget.")
     if not t["tot_activated"]:
         st.info("ToT not activated for this question (single obvious path).")
         return
