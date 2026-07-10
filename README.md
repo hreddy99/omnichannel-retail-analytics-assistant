@@ -1,4 +1,4 @@
-#Conversational Analytics with Agentic AI
+# Conversational Analytics with Agentic AI
 
 This project demonstrates a governed agentic AI approach to conversational analytics, where business users can ask natural language questions and receive evidence-backed answers from trusted data.
 
