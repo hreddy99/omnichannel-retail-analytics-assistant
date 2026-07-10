@@ -1,3 +1,12 @@
+#Conversational Analytics with Agentic AI
+
+This project demonstrates a governed agentic AI approach to conversational analytics, where business users can ask natural language questions and receive evidence-backed answers from trusted data.
+
+Watch the demo:
+Conversational Analytics with Agentic AI | DataToAgents Demo
+https://www.youtube.com/watch?v=JBJLkgZHbFw&t=313s
+
+
 # Omnichannel Retail Analytics Assistant
 
 **A governed conversational-analytics investigation layer for enterprise retail.**
